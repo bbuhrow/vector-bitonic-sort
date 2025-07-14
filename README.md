@@ -8,3 +8,8 @@ On an AMD Epyc 9174F processor the basecase routine will sort randomized
   * length-32k arrays in about 219 microseconds
   * length-1M arrays in about 12.5 milliseconds
 
+REQUIRES AVX-512 instruction set support.
+
+build with your favorite C compiler, for example:
+clang -O2 -g -march=icelake-client vec_bitonic_sort.c -o vecsort
+
