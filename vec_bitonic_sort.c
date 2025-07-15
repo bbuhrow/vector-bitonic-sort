@@ -35,7 +35,7 @@
 #include <string.h>
 #include <inttypes.h>
 #include <immintrin.h>
-
+#include <omp.h>
 
 
 
@@ -141,6 +141,41 @@ get_rand(uint32 *rand_seed, uint32 *rand_carry) {
 	return (uint32)temp;
 }
 
+uint32_t my_clz32(uint64_t n)
+{
+#if (INLINE_ASM && defined(__x86_64__))
+#ifdef __BMI1__
+	uint32_t t;
+	asm(" lzcnt %1, %0\n": "=r"(t) : "r"(n) : "flags");
+	return t;
+#else
+	if (n)
+		return __builtin_clz(n);
+	return 32;
+#endif
+#else
+#if defined(__GNUC__)
+	if (n)
+		return __builtin_clz(n);
+	return 32;
+#else
+	if (n == 0)
+		return 32;
+	uint32_t r = 0;
+	if ((n & (0xFFFFull << 16)) == 0)
+		r += 16, n <<= 16;
+	if ((n & (0xFFull << 24)) == 0)
+		r += 8, n <<= 8;
+	if ((n & (0xFull << 28)) == 0)
+		r += 4, n <<= 4;
+	if ((n & (0x3ull << 30)) == 0)
+		r += 2, n <<= 2;
+	if ((n & (0x1ull << 31)) == 0)
+		r += 1;
+	return r;
+#endif
+#endif
+}
 
 void bitonic_merge_dir_64(uint64_t* data, int dir)
 {
@@ -1333,24 +1368,24 @@ void bitonic_merge(uint64_t *data, uint32_t sz, int dir)
 			__mmask8 m8;
 
 			// swap 64 elements at starting offset i * 64
-			dv1 = _mm512_loadu_epi64(data + i * 64 + 0);
-			dv2 = _mm512_loadu_epi64(data + i * 64 + 8);
-			dv3 = _mm512_loadu_epi64(data + i * 64 + 16);
-			dv4 = _mm512_loadu_epi64(data + i * 64 + 24);
-			dv5 = _mm512_loadu_epi64(data + i * 64 + 32);
-			dv6 = _mm512_loadu_epi64(data + i * 64 + 40);
-			dv7 = _mm512_loadu_epi64(data + i * 64 + 48);
-			dv8 = _mm512_loadu_epi64(data + i * 64 + 56);
+			dv1 = _mm512_load_epi64(data + i * 64 + 0);
+			dv2 = _mm512_load_epi64(data + i * 64 + 8);
+			dv3 = _mm512_load_epi64(data + i * 64 + 16);
+			dv4 = _mm512_load_epi64(data + i * 64 + 24);
+			dv5 = _mm512_load_epi64(data + i * 64 + 32);
+			dv6 = _mm512_load_epi64(data + i * 64 + 40);
+			dv7 = _mm512_load_epi64(data + i * 64 + 48);
+			dv8 = _mm512_load_epi64(data + i * 64 + 56);
 			
 			// with 64 elements at offset i * 64 + stride (sz/2)
-			dv9 = _mm512_loadu_epi64(data  + i * 64 + sz/2 + 0);
-			dv10 = _mm512_loadu_epi64(data + i * 64 + sz/2 + 8);
-			dv11 = _mm512_loadu_epi64(data + i * 64 + sz/2 + 16);
-			dv12 = _mm512_loadu_epi64(data + i * 64 + sz/2 + 24);
-			dv13 = _mm512_loadu_epi64(data + i * 64 + sz/2 + 32);
-			dv14 = _mm512_loadu_epi64(data + i * 64 + sz/2 + 40);
-			dv15 = _mm512_loadu_epi64(data + i * 64 + sz/2 + 48);
-			dv16 = _mm512_loadu_epi64(data + i * 64 + sz/2 + 56);
+			dv9 = _mm512_load_epi64(data  + i * 64 + sz/2 + 0);
+			dv10 = _mm512_load_epi64(data + i * 64 + sz/2 + 8);
+			dv11 = _mm512_load_epi64(data + i * 64 + sz/2 + 16);
+			dv12 = _mm512_load_epi64(data + i * 64 + sz/2 + 24);
+			dv13 = _mm512_load_epi64(data + i * 64 + sz/2 + 32);
+			dv14 = _mm512_load_epi64(data + i * 64 + sz/2 + 40);
+			dv15 = _mm512_load_epi64(data + i * 64 + sz/2 + 48);
+			dv16 = _mm512_load_epi64(data + i * 64 + sz/2 + 56);
 
 				m1 = _mm512_cmplt_epu64_mask(dv1, dv9);
 				m2 = _mm512_cmplt_epu64_mask(dv2, dv10);
@@ -1389,23 +1424,23 @@ void bitonic_merge(uint64_t *data, uint32_t sz, int dir)
 			dv7 = t7;
 			dv8 = t8;
 			
-			_mm512_storeu_epi64(data + i * 64 + 0, dv1);
-			_mm512_storeu_epi64(data + i * 64 + 8, dv2);
-			_mm512_storeu_epi64(data + i * 64 + 16, dv3);
-			_mm512_storeu_epi64(data + i * 64 + 24, dv4);
-			_mm512_storeu_epi64(data + i * 64 + 32, dv5);
-			_mm512_storeu_epi64(data + i * 64 + 40, dv6);
-			_mm512_storeu_epi64(data + i * 64 + 48, dv7);
-			_mm512_storeu_epi64(data + i * 64 + 56, dv8);
+			_mm512_store_epi64(data + i * 64 + 0, dv1);
+			_mm512_store_epi64(data + i * 64 + 8, dv2);
+			_mm512_store_epi64(data + i * 64 + 16, dv3);
+			_mm512_store_epi64(data + i * 64 + 24, dv4);
+			_mm512_store_epi64(data + i * 64 + 32, dv5);
+			_mm512_store_epi64(data + i * 64 + 40, dv6);
+			_mm512_store_epi64(data + i * 64 + 48, dv7);
+			_mm512_store_epi64(data + i * 64 + 56, dv8);
 			
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 0,  dv9);
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 8,  dv10);
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 16, dv11);
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 24, dv12);
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 32, dv13);
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 40, dv14);
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 48, dv15);
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 56, dv16);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 0,  dv9);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 8,  dv10);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 16, dv11);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 24, dv12);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 32, dv13);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 40, dv14);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 48, dv15);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 56, dv16);
 
 		}
 	}
@@ -1448,24 +1483,24 @@ void bitonic_merge(uint64_t *data, uint32_t sz, int dir)
 			__mmask8 m8;
 
 			// swap 64 elements at starting offset i * 64
-			dv1 = _mm512_loadu_epi64(data + i * 64 + 0);
-			dv2 = _mm512_loadu_epi64(data + i * 64 + 8);
-			dv3 = _mm512_loadu_epi64(data + i * 64 + 16);
-			dv4 = _mm512_loadu_epi64(data + i * 64 + 24);
-			dv5 = _mm512_loadu_epi64(data + i * 64 + 32);
-			dv6 = _mm512_loadu_epi64(data + i * 64 + 40);
-			dv7 = _mm512_loadu_epi64(data + i * 64 + 48);
-			dv8 = _mm512_loadu_epi64(data + i * 64 + 56);
+			dv1 = _mm512_load_epi64(data + i * 64 + 0);
+			dv2 = _mm512_load_epi64(data + i * 64 + 8);
+			dv3 = _mm512_load_epi64(data + i * 64 + 16);
+			dv4 = _mm512_load_epi64(data + i * 64 + 24);
+			dv5 = _mm512_load_epi64(data + i * 64 + 32);
+			dv6 = _mm512_load_epi64(data + i * 64 + 40);
+			dv7 = _mm512_load_epi64(data + i * 64 + 48);
+			dv8 = _mm512_load_epi64(data + i * 64 + 56);
 		
 			// with 64 elements at offset i * 64 + stride (sz/2)
-			dv9 = _mm512_loadu_epi64(data  + i * 64 + sz/2 + 0);
-			dv10 = _mm512_loadu_epi64(data + i * 64 + sz/2 + 8);
-			dv11 = _mm512_loadu_epi64(data + i * 64 + sz/2 + 16);
-			dv12 = _mm512_loadu_epi64(data + i * 64 + sz/2 + 24);
-			dv13 = _mm512_loadu_epi64(data + i * 64 + sz/2 + 32);
-			dv14 = _mm512_loadu_epi64(data + i * 64 + sz/2 + 40);
-			dv15 = _mm512_loadu_epi64(data + i * 64 + sz/2 + 48);
-			dv16 = _mm512_loadu_epi64(data + i * 64 + sz/2 + 56);
+			dv9 = _mm512_load_epi64(data  + i * 64 + sz/2 + 0);
+			dv10 = _mm512_load_epi64(data + i * 64 + sz/2 + 8);
+			dv11 = _mm512_load_epi64(data + i * 64 + sz/2 + 16);
+			dv12 = _mm512_load_epi64(data + i * 64 + sz/2 + 24);
+			dv13 = _mm512_load_epi64(data + i * 64 + sz/2 + 32);
+			dv14 = _mm512_load_epi64(data + i * 64 + sz/2 + 40);
+			dv15 = _mm512_load_epi64(data + i * 64 + sz/2 + 48);
+			dv16 = _mm512_load_epi64(data + i * 64 + sz/2 + 56);
 
 				m1 = _mm512_cmpgt_epu64_mask(dv1, dv9);
 				m2 = _mm512_cmpgt_epu64_mask(dv2, dv10);
@@ -1503,23 +1538,23 @@ void bitonic_merge(uint64_t *data, uint32_t sz, int dir)
 			dv7 = t7;
 			dv8 = t8;
 			
-			_mm512_storeu_epi64(data + i * 64 + 0, dv1);
-			_mm512_storeu_epi64(data + i * 64 + 8, dv2);
-			_mm512_storeu_epi64(data + i * 64 + 16, dv3);
-			_mm512_storeu_epi64(data + i * 64 + 24, dv4);
-			_mm512_storeu_epi64(data + i * 64 + 32, dv5);
-			_mm512_storeu_epi64(data + i * 64 + 40, dv6);
-			_mm512_storeu_epi64(data + i * 64 + 48, dv7);
-			_mm512_storeu_epi64(data + i * 64 + 56, dv8);
+			_mm512_store_epi64(data + i * 64 + 0, dv1);
+			_mm512_store_epi64(data + i * 64 + 8, dv2);
+			_mm512_store_epi64(data + i * 64 + 16, dv3);
+			_mm512_store_epi64(data + i * 64 + 24, dv4);
+			_mm512_store_epi64(data + i * 64 + 32, dv5);
+			_mm512_store_epi64(data + i * 64 + 40, dv6);
+			_mm512_store_epi64(data + i * 64 + 48, dv7);
+			_mm512_store_epi64(data + i * 64 + 56, dv8);
 			
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 0,  dv9);
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 8,  dv10);
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 16, dv11);
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 24, dv12);
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 32, dv13);
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 40, dv14);
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 48, dv15);
-			_mm512_storeu_epi64(data + i * 64 + sz/2 + 56, dv16);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 0,  dv9);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 8,  dv10);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 16, dv11);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 24, dv12);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 32, dv13);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 40, dv14);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 48, dv15);
+			_mm512_store_epi64(data + i * 64 + sz/2 + 56, dv16);
 
 		}
 	}
@@ -1548,37 +1583,205 @@ void bitonic_sort(uint64_t *data, uint32_t sz, int dir)
 	return;
 }
 
+void sort(uint64_t *data, uint32_t sz, int dir)
+{
+	// top level sort dealing with two things:
+	// 1) the bitonic sort function requires the data array
+	// to be aligned and
+	// 2) the bitonic sort works on a power-of-2 sized array
+	// here we make sure we feed the bitonic sort function
+	// an array that satifies those requirements.
+	int is_aligned = (((uint64_t)data & 0x3full) == 0);
+	if (is_aligned && ((sz & (sz - 1)) == 0))
+	{
+		// meets both requirements as-is
+		bitonic_sort(data, sz, dir);
+		return;
+	}
+	
+	// otherwise we need to copy to an aligned buffer and/or 
+	// change the buffer size
+	uint32_t new_sz = sz;
+	if ((sz & (sz - 1)) > 0)
+	{
+		new_sz = my_clz32(sz);
+		if (new_sz == 0)
+		{
+			printf("buffer too big, sz must be <= 2^31 in sort()\n");
+			exit(0);
+		}
+		new_sz = 1 << (32 - new_sz + 1);
+	}
+		
+	uint64_t *adata;
+	
+	if (!is_aligned)
+	{
+		adata = (uint64_t*)aligned_malloc(new_sz * sizeof(uint64_t), 64);
+		memcpy(adata, data, sz * sizeof(uint64_t));
+	}
+	else
+	{
+		adata = data;
+	}
+	
+	if ((new_sz - sz) > 0)
+	{
+		if (dir == 0)
+			memset(adata + sz, 0xff, (new_sz - sz));
+		else
+			memset(adata + sz, 0, (new_sz - sz));
+	}
+	
+	bitonic_sort(adata, new_sz, dir);
+	
+	if (!is_aligned)
+	{
+		memcpy(data, adata, sz * sizeof(uint64_t));
+		aligned_free(adata);
+	}
+	
+	return;
+}
+
+void parsort(uint64_t *data, uint32_t sz, int dir, int threads)
+{
+	// REQUIRED: threads and sz both powers of 2 and
+	// (threads * 64) divides sz
+	uint32_t bitonic_sort_size = sz / threads;
+	uint32_t j;
+	
+	omp_set_num_threads(threads);
+
+#pragma omp parallel for
+	for (j = 0; j < sz / bitonic_sort_size; j++) {
+		bitonic_sort(&data[j * bitonic_sort_size], bitonic_sort_size, j & 1);
+	}
+	
+	if (threads == 1)
+		return;
+		
+	bitonic_sort_size *= 2;
+	while (bitonic_sort_size < sz)
+	{
+#pragma omp parallel for
+		for (j = 0; j < sz / bitonic_sort_size; j++) {
+			bitonic_merge(&data[j * bitonic_sort_size], bitonic_sort_size, j & 1);
+		}
+		bitonic_sort_size *= 2;
+	}
+	
+	bitonic_merge(data, sz, dir);
+	
+	return;
+}
 
 int main(int argc, char ** argv)
 {
 	uint32 i, j, n;
 	uint32 num_sort;
-	uint32 num_reps;
 	uint32 key_bits;
+	uint32 num_reps;
+	uint32 num_threads;
 	double seconds;
 	double tseconds = 0.0;
 	uint32 seed1 = 0x11111;
 	uint32 seed2 = 0x22222;
 	
-	if ((argc < 4) || (argc > 5))
+	if ((argc < 5) || (argc > 6))
 	{
-		printf("usage: vecsort key_bits num_sort num_reps <seed>\n");
+		printf("usage: vecsort key_bits num_sort num_reps num_threads <seed>\n");
 		exit(0);
 	}
-	
+
 	key_bits = strtoul(argv[1], NULL, 10);
 	num_sort = strtoul(argv[2], NULL, 10);
 	num_reps = strtoul(argv[3], NULL, 10);
+	num_threads = strtoul(argv[4], NULL, 10);
 	
 	if (argc == 6)
 	{
-		uint32 s = strtoul(argv[4], NULL, 10);
+		uint32 s = strtoul(argv[5], NULL, 10);
+		seed1 = s & 0xffff;
+		seed2 = s >> 16;
+		printf("seed: %u\n", s);
+	}
+	
+	uint64_t *loc_keys = (uint64 *)aligned_malloc(num_sort * sizeof(uint64), 64);
+	
+	for (n = 0; n < num_reps; n++) {
+		
+		for (i = 0; i < num_sort; i++) {
+			uint64 key = (uint64)get_rand(&seed1, &seed2) << 32 |
+					get_rand(&seed1, &seed2);
+					
+			loc_keys[i] = key >> (64 - key_bits);
+		}
+		
+		seconds = get_cpu_time();
+		
+		uint32 num_collisions = 0;
+		
+		parsort(loc_keys, num_sort, 0, num_threads);
+		
+		tseconds += (get_cpu_time() - seconds);
+		
+		for (j = 1; j < num_sort; j++) {
+			if (loc_keys[j] < loc_keys[j-1]) {
+				printf("sort error\n");
+				goto done;
+			}
+			
+			if (loc_keys[j] == loc_keys[j-1]) {
+				num_collisions++;
+			}
+		}
+		
+		if (num_reps <= 10)
+			printf("found %u total collisions in %u elements\n", 
+				num_collisions, num_sort);
+	}
+	
+done:
+	printf("sort %u x %u-bit keys in average of %lf seconds\n", 
+		num_sort, key_bits, tseconds / (double)num_reps);
+	
+	aligned_free(loc_keys);
+	return 0;
+}
+
+int main1(int argc, char ** argv)
+{
+	uint32 i, j, n;
+	uint32 num_sort;
+	uint32 num_reps;
+	uint32 key_bits;
+	uint32 sort_sz;
+	double seconds;
+	double tseconds = 0.0;
+	uint32 seed1 = 0x11111;
+	uint32 seed2 = 0x22222;
+	
+	if ((argc < 5) || (argc > 6))
+	{
+		printf("usage: vecsort sort_sz_bits key_bits num_sort num_reps <seed>\n");
+		exit(0);
+	}
+	
+	sort_sz = strtoul(argv[1], NULL, 10);
+	key_bits = strtoul(argv[2], NULL, 10);
+	num_sort = strtoul(argv[3], NULL, 10);
+	num_reps = strtoul(argv[4], NULL, 10);
+	
+	if (argc == 7)
+	{
+		uint32 s = strtoul(argv[5], NULL, 10);
 		seed1 = s & 0xffff;
 		seed2 = s >> 16;
 		printf("seed: %u\n", s);
 	}
 
-#define bitonic_sort_size (1 << 15)
+	uint32 bitonic_sort_size = (1 << sort_sz);
 
 	uint32 num_lists = num_sort / bitonic_sort_size;
 	
@@ -1604,11 +1807,7 @@ int main(int argc, char ** argv)
 		uint32 num_collisions = 0;
 		
 		for (j = 0; j < num_sort; j += bitonic_sort_size) {
-#if bitonic_sort_size == 64
-			bitonic_sort_dir_64(loc_keys + j, 0);
-#else
-			bitonic_sort(loc_keys + j, bitonic_sort_size, 0);
-#endif
+			sort(loc_keys + j, bitonic_sort_size, 0);
 		}
 		
 		tseconds += (get_cpu_time() - seconds);
