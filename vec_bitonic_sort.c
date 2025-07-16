@@ -60,6 +60,39 @@ typedef uint64_t uint64;
 #define SHOW_PROF /* nothing */
 #endif
 
+
+int qcomp_uint64(const void *x, const void *y)
+{
+	uint64_t *xx = (uint64_t *)x;
+	uint64_t *yy = (uint64_t *)y;
+	
+	return (*xx > *yy) - (*xx < *yy);
+	
+	
+	if (*xx > *yy)
+		return 1;
+	else if (*xx == *yy)
+		return 0;
+	else
+		return -1;
+}
+
+int qcomp_uint32(const void *x, const void *y)
+{
+	uint32_t *xx = (uint32_t *)x;
+	uint32_t *yy = (uint32_t *)y;
+	
+	return (*xx > *yy) - (*xx < *yy);
+	
+	
+	if (*xx > *yy)
+		return 1;
+	else if (*xx == *yy)
+		return 0;
+	else
+		return -1;
+}
+
 static void *
 aligned_malloc(size_t len, uint32 align) {
 
@@ -183,6 +216,15 @@ uint32_t my_clz32(uint64_t n)
 #define SWAP64(x) _mm512_shuffle_epi32((x), 0x4E)
 #define SWAP128(x) _mm512_permutex_epi64((x), 0x4E)
 #define SWAP256(x) _mm512_shuffle_i64x2((x), (x), 0x4E)
+
+// intrinsics for swapping N-bit chunks of data within a 512-bit vector, with N < 32.
+// these require index vectors and the additional extension AVX-512BW
+static __m512i swap8bit_idx = _mm512_set1_epi64(0xefcdba8967452301);
+static __m512i swap16bit_idx = _mm512_set1_epi64(0xdcfe98ba54761032);
+
+#define SWAP8(x) _mm512_shuffle_epi8((x), swap8bit_idx)
+#define SWAP16(x) _mm512_shuffle_epi8((x), swap16bit_idx)
+
 
 void print128(__m512i i1, __m512i i2, __m512i i3, __m512i i4,
 	__m512i i5, __m512i i6, __m512i i7, __m512i i8)
@@ -3674,6 +3716,55 @@ int main(int argc, char ** argv)
 			num_collisions, num_lists, bitonic_sort_size);
 	}
 	
+	printf("sort %u x %u-bit keys in average of %lf seconds\n", 
+		num_sort, key_bits, tseconds / (double)num_reps);
+	
+	tseconds = 0.0;
+	for (n = 0; n < num_reps; n++) {
+		
+		for (i = 0; i < num_sort; i++) {
+			uint64 key = (uint64)get_rand(&seed1, &seed2) << 32 |
+					get_rand(&seed1, &seed2);
+					
+			loc_keys[i] = key >> (64 - key_bits);
+		}
+		
+		seconds = get_cpu_time();
+		
+		uint32 num_collisions = 0;
+		
+		for (j = 0; j < num_sort; j += bitonic_sort_size) {
+			qsort(loc_keys + j, bitonic_sort_size, sizeof(uint64), &qcomp_uint64);
+		}
+		
+		tseconds += (get_cpu_time() - seconds);
+		
+		for (i = 0; i < num_lists; i++) {
+			for (j = 1; j < bitonic_sort_size; j++) {
+				if (loc_keys[i * bitonic_sort_size + j] < loc_keys[i * bitonic_sort_size + j-1]) {
+					printf("sort error at position %d in list\n", j);
+					
+					int k;
+					for (k = 0; k < bitonic_sort_size; k++)
+					{
+						if (k % 16 == 0) printf("\n");
+						printf("%16lu ", loc_keys[i * bitonic_sort_size + k]);
+					}
+					printf("\n");
+	
+					goto done;
+				}
+				
+				if (loc_keys[i * bitonic_sort_size + j] == loc_keys[i * bitonic_sort_size + j-1]) {
+					num_collisions++;
+				}
+			}
+		}
+		
+		printf("found %u total collisions in %u lists of %u elements\n", 
+			num_collisions, num_lists, bitonic_sort_size);
+	}
+	
 done:
 	printf("sort %u x %u-bit keys in average of %lf seconds\n", 
 		num_sort, key_bits, tseconds / (double)num_reps);
@@ -3738,6 +3829,53 @@ int main2(int argc, char ** argv)
 		
 		for (j = 0; j < num_sort; j += bitonic_sort_size) {
 			sort32(loc_keys + j, bitonic_sort_size, 0);
+		}
+		
+		tseconds += (get_cpu_time() - seconds);
+		
+		for (i = 0; i < num_lists; i++) {
+			for (j = 1; j < bitonic_sort_size; j++) {
+				if (loc_keys[i * bitonic_sort_size + j] < loc_keys[i * bitonic_sort_size + j-1]) {
+					printf("sort error at position %d in list\n", j);
+					
+					int k;
+					for (k = 0; k < bitonic_sort_size; k++)
+					{
+						if (k % 16 == 0) printf("\n");
+						printf("%08u ", loc_keys[i * bitonic_sort_size + k]);
+					}
+					printf("\n");
+	
+					goto done;
+				}
+				
+				if (loc_keys[i * bitonic_sort_size + j] == loc_keys[i * bitonic_sort_size + j-1]) {
+					num_collisions++;
+				}
+			}
+		}
+		
+		printf("found %u total collisions in %u lists of %u elements\n", 
+			num_collisions, num_lists, bitonic_sort_size);
+	}
+	
+	printf("sort %u x %u-bit keys in average of %lf seconds\n", 
+		num_sort, key_bits, tseconds / (double)num_reps);
+	
+	tseconds = 0.0;
+	for (n = 0; n < num_reps; n++) {
+		
+		for (i = 0; i < num_sort; i++) {
+			uint32 key = get_rand(&seed1, &seed2);
+			loc_keys[i] = key >> (32 - key_bits);
+		}
+		
+		seconds = get_cpu_time();
+		
+		uint32 num_collisions = 0;
+		
+		for (j = 0; j < num_sort; j += bitonic_sort_size) {
+			qsort(loc_keys + j, bitonic_sort_size, sizeof(uint32), &qcomp_uint32);
 		}
 		
 		tseconds += (get_cpu_time() - seconds);
