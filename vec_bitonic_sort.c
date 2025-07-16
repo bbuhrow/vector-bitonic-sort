@@ -177,6 +177,8 @@ uint32_t my_clz32(uint64_t n)
 #endif
 }
 
+// intrinsics for swapping N-bit chunks of data within a 512-bit vector
+// that use immediates (faster and fewer registers than needing to load index vectors)
 #define SWAP32(x) _mm512_shuffle_epi32((x), 0xB1)
 #define SWAP64(x) _mm512_shuffle_epi32((x), 0x4E)
 #define SWAP128(x) _mm512_permutex_epi64((x), 0x4E)
@@ -1806,15 +1808,15 @@ void bitonic_merge_dir_64(uint64_t* data, int dir)
 		m7 = _mm512_cmplt_epu64_mask(dv7, dv7_swap);
 		m8 = _mm512_cmplt_epu64_mask(dv8, dv8_swap);
 
-		// '0F' for the swap between dist-4 lanes, non alternating
-		dv1 = _mm512_mask_blend_epi64(m1 ^ 0x0F, dv1_swap, dv1);
-		dv2 = _mm512_mask_blend_epi64(m2 ^ 0x0F, dv2_swap, dv2);
-		dv3 = _mm512_mask_blend_epi64(m3 ^ 0x0F, dv3_swap, dv3);
-		dv4 = _mm512_mask_blend_epi64(m4 ^ 0x0F, dv4_swap, dv4);
-		dv5 = _mm512_mask_blend_epi64(m5 ^ 0x0F, dv5_swap, dv5);
-		dv6 = _mm512_mask_blend_epi64(m6 ^ 0x0F, dv6_swap, dv6);
-		dv7 = _mm512_mask_blend_epi64(m7 ^ 0x0F, dv7_swap, dv7);
-		dv8 = _mm512_mask_blend_epi64(m8 ^ 0x0F, dv8_swap, dv8);
+		// 'F0' for the swap between dist-4 lanes, non alternating
+		dv1 = _mm512_mask_blend_epi64(m1 ^ 0xF0, dv1, dv1_swap);
+		dv2 = _mm512_mask_blend_epi64(m2 ^ 0xF0, dv2, dv2_swap);
+		dv3 = _mm512_mask_blend_epi64(m3 ^ 0xF0, dv3, dv3_swap);
+		dv4 = _mm512_mask_blend_epi64(m4 ^ 0xF0, dv4, dv4_swap);
+		dv5 = _mm512_mask_blend_epi64(m5 ^ 0xF0, dv5, dv5_swap);
+		dv6 = _mm512_mask_blend_epi64(m6 ^ 0xF0, dv6, dv6_swap);
+		dv7 = _mm512_mask_blend_epi64(m7 ^ 0xF0, dv7, dv7_swap);
+		dv8 = _mm512_mask_blend_epi64(m8 ^ 0xF0, dv8, dv8_swap);
 
 		// distance 2 swaps
 		dv1_swap = SWAP128(dv1);
@@ -1855,24 +1857,24 @@ void bitonic_merge_dir_64(uint64_t* data, int dir)
 		dv7_swap = SWAP64(dv7);
 		dv8_swap = SWAP64(dv8);
 		
-		m1 = _mm512_cmplt_epu64_mask(dv1_swap, dv1);
-		m2 = _mm512_cmplt_epu64_mask(dv2_swap, dv2);
-		m3 = _mm512_cmplt_epu64_mask(dv3_swap, dv3);
-		m4 = _mm512_cmplt_epu64_mask(dv4_swap, dv4);
-		m5 = _mm512_cmplt_epu64_mask(dv5_swap, dv5);
-		m6 = _mm512_cmplt_epu64_mask(dv6_swap, dv6);
-		m7 = _mm512_cmplt_epu64_mask(dv7_swap, dv7);
-		m8 = _mm512_cmplt_epu64_mask(dv8_swap, dv8);
+		m1 = _mm512_cmplt_epu64_mask(dv1, dv1_swap);
+		m2 = _mm512_cmplt_epu64_mask(dv2, dv2_swap);
+		m3 = _mm512_cmplt_epu64_mask(dv3, dv3_swap);
+		m4 = _mm512_cmplt_epu64_mask(dv4, dv4_swap);
+		m5 = _mm512_cmplt_epu64_mask(dv5, dv5_swap);
+		m6 = _mm512_cmplt_epu64_mask(dv6, dv6_swap);
+		m7 = _mm512_cmplt_epu64_mask(dv7, dv7_swap);
+		m8 = _mm512_cmplt_epu64_mask(dv8, dv8_swap);
 
 		// 'AA' for the swap between adjacent lanes
-		dv1 = _mm512_mask_blend_epi64(m1 ^ 0xaa, dv1_swap, dv1);
-		dv2 = _mm512_mask_blend_epi64(m2 ^ 0xaa, dv2_swap, dv2);
-		dv3 = _mm512_mask_blend_epi64(m3 ^ 0xaa, dv3_swap, dv3);
-		dv4 = _mm512_mask_blend_epi64(m4 ^ 0xaa, dv4_swap, dv4);
-		dv5 = _mm512_mask_blend_epi64(m5 ^ 0xaa, dv5_swap, dv5);
-		dv6 = _mm512_mask_blend_epi64(m6 ^ 0xaa, dv6_swap, dv6);
-		dv7 = _mm512_mask_blend_epi64(m7 ^ 0xaa, dv7_swap, dv7);
-		dv8 = _mm512_mask_blend_epi64(m8 ^ 0xaa, dv8_swap, dv8);
+		dv1 = _mm512_mask_blend_epi64(m1 ^ 0xAA, dv1, dv1_swap);
+		dv2 = _mm512_mask_blend_epi64(m2 ^ 0xAA, dv2, dv2_swap);
+		dv3 = _mm512_mask_blend_epi64(m3 ^ 0xAA, dv3, dv3_swap);
+		dv4 = _mm512_mask_blend_epi64(m4 ^ 0xAA, dv4, dv4_swap);
+		dv5 = _mm512_mask_blend_epi64(m5 ^ 0xAA, dv5, dv5_swap);
+		dv6 = _mm512_mask_blend_epi64(m6 ^ 0xAA, dv6, dv6_swap);
+		dv7 = _mm512_mask_blend_epi64(m7 ^ 0xAA, dv7, dv7_swap);
+		dv8 = _mm512_mask_blend_epi64(m8 ^ 0xAA, dv8, dv8_swap);
 
 	}
 	else
@@ -1958,15 +1960,15 @@ void bitonic_merge_dir_64(uint64_t* data, int dir)
 		m7 = _mm512_cmpgt_epu64_mask(dv7, dv7_swap);
 		m8 = _mm512_cmpgt_epu64_mask(dv8, dv8_swap);
 
-		// '0F' for the swap between dist-4 lanes, non alternating
-		dv1 = _mm512_mask_blend_epi64(m1 ^ 0x0F, dv1_swap, dv1);
-		dv2 = _mm512_mask_blend_epi64(m2 ^ 0x0F, dv2_swap, dv2);
-		dv3 = _mm512_mask_blend_epi64(m3 ^ 0x0F, dv3_swap, dv3);
-		dv4 = _mm512_mask_blend_epi64(m4 ^ 0x0F, dv4_swap, dv4);
-		dv5 = _mm512_mask_blend_epi64(m5 ^ 0x0F, dv5_swap, dv5);
-		dv6 = _mm512_mask_blend_epi64(m6 ^ 0x0F, dv6_swap, dv6);
-		dv7 = _mm512_mask_blend_epi64(m7 ^ 0x0F, dv7_swap, dv7);
-		dv8 = _mm512_mask_blend_epi64(m8 ^ 0x0F, dv8_swap, dv8);
+		// 'F0' for the swap between dist-4 lanes, non alternating
+		dv1 = _mm512_mask_blend_epi64(m1 ^ 0xF0, dv1, dv1_swap);
+		dv2 = _mm512_mask_blend_epi64(m2 ^ 0xF0, dv2, dv2_swap);
+		dv3 = _mm512_mask_blend_epi64(m3 ^ 0xF0, dv3, dv3_swap);
+		dv4 = _mm512_mask_blend_epi64(m4 ^ 0xF0, dv4, dv4_swap);
+		dv5 = _mm512_mask_blend_epi64(m5 ^ 0xF0, dv5, dv5_swap);
+		dv6 = _mm512_mask_blend_epi64(m6 ^ 0xF0, dv6, dv6_swap);
+		dv7 = _mm512_mask_blend_epi64(m7 ^ 0xF0, dv7, dv7_swap);
+		dv8 = _mm512_mask_blend_epi64(m8 ^ 0xF0, dv8, dv8_swap);
 
 		// distance 2 swaps
 		dv1_swap = SWAP128(dv1);
@@ -2007,24 +2009,24 @@ void bitonic_merge_dir_64(uint64_t* data, int dir)
 		dv7_swap = SWAP64(dv7);
 		dv8_swap = SWAP64(dv8);
 		
-		m1 = _mm512_cmpgt_epu64_mask(dv1_swap, dv1);
-		m2 = _mm512_cmpgt_epu64_mask(dv2_swap, dv2);
-		m3 = _mm512_cmpgt_epu64_mask(dv3_swap, dv3);
-		m4 = _mm512_cmpgt_epu64_mask(dv4_swap, dv4);
-		m5 = _mm512_cmpgt_epu64_mask(dv5_swap, dv5);
-		m6 = _mm512_cmpgt_epu64_mask(dv6_swap, dv6);
-		m7 = _mm512_cmpgt_epu64_mask(dv7_swap, dv7);
-		m8 = _mm512_cmpgt_epu64_mask(dv8_swap, dv8);
+		m1 = _mm512_cmpgt_epu64_mask(dv1, dv1_swap);
+		m2 = _mm512_cmpgt_epu64_mask(dv2, dv2_swap);
+		m3 = _mm512_cmpgt_epu64_mask(dv3, dv3_swap);
+		m4 = _mm512_cmpgt_epu64_mask(dv4, dv4_swap);
+		m5 = _mm512_cmpgt_epu64_mask(dv5, dv5_swap);
+		m6 = _mm512_cmpgt_epu64_mask(dv6, dv6_swap);
+		m7 = _mm512_cmpgt_epu64_mask(dv7, dv7_swap);
+		m8 = _mm512_cmpgt_epu64_mask(dv8, dv8_swap);
 
 		// 'AA' for the swap between adjacent lanes
-		dv1 = _mm512_mask_blend_epi64(m1 ^ 0xaa, dv1_swap, dv1);
-		dv2 = _mm512_mask_blend_epi64(m2 ^ 0xaa, dv2_swap, dv2);
-		dv3 = _mm512_mask_blend_epi64(m3 ^ 0xaa, dv3_swap, dv3);
-		dv4 = _mm512_mask_blend_epi64(m4 ^ 0xaa, dv4_swap, dv4);
-		dv5 = _mm512_mask_blend_epi64(m5 ^ 0xaa, dv5_swap, dv5);
-		dv6 = _mm512_mask_blend_epi64(m6 ^ 0xaa, dv6_swap, dv6);
-		dv7 = _mm512_mask_blend_epi64(m7 ^ 0xaa, dv7_swap, dv7);
-		dv8 = _mm512_mask_blend_epi64(m8 ^ 0xaa, dv8_swap, dv8);
+		dv1 = _mm512_mask_blend_epi64(m1 ^ 0xAA, dv1, dv1_swap);
+		dv2 = _mm512_mask_blend_epi64(m2 ^ 0xAA, dv2, dv2_swap);
+		dv3 = _mm512_mask_blend_epi64(m3 ^ 0xAA, dv3, dv3_swap);
+		dv4 = _mm512_mask_blend_epi64(m4 ^ 0xAA, dv4, dv4_swap);
+		dv5 = _mm512_mask_blend_epi64(m5 ^ 0xAA, dv5, dv5_swap);
+		dv6 = _mm512_mask_blend_epi64(m6 ^ 0xAA, dv6, dv6_swap);
+		dv7 = _mm512_mask_blend_epi64(m7 ^ 0xAA, dv7, dv7_swap);
+		dv8 = _mm512_mask_blend_epi64(m8 ^ 0xAA, dv8, dv8_swap);
 	}
 
 	_mm512_store_epi64(data, dv1);
@@ -2136,15 +2138,15 @@ void bitonic_sort_dir_64(uint64_t* data, int dir)
 	m7 = _mm512_cmpgt_epu64_mask(dv7, dv7_swap);
 	m8 = _mm512_cmpgt_epu64_mask(dv8, dv8_swap);
 
-	// 'CC' for the swap between dist-2 lanes ^ '0F' to alternate gt vs. lt --> 0xC3
-	dv1 = _mm512_mask_blend_epi64(m1 ^ 0xC3, dv1, dv1_swap);
-	dv2 = _mm512_mask_blend_epi64(m2 ^ 0xC3, dv2, dv2_swap);
-	dv3 = _mm512_mask_blend_epi64(m3 ^ 0xC3, dv3, dv3_swap);
-	dv4 = _mm512_mask_blend_epi64(m4 ^ 0xC3, dv4, dv4_swap);
-	dv5 = _mm512_mask_blend_epi64(m5 ^ 0xC3, dv5, dv5_swap);
-	dv6 = _mm512_mask_blend_epi64(m6 ^ 0xC3, dv6, dv6_swap);
-	dv7 = _mm512_mask_blend_epi64(m7 ^ 0xC3, dv7, dv7_swap);
-	dv8 = _mm512_mask_blend_epi64(m8 ^ 0xC3, dv8, dv8_swap);
+	// 'CC' for the swap between dist-2 lanes ^ 'F0' to alternate gt vs. lt --> 0xC3
+	dv1 = _mm512_mask_blend_epi64(m1 ^ 0x3C, dv1, dv1_swap);
+	dv2 = _mm512_mask_blend_epi64(m2 ^ 0x3C, dv2, dv2_swap);
+	dv3 = _mm512_mask_blend_epi64(m3 ^ 0x3C, dv3, dv3_swap);
+	dv4 = _mm512_mask_blend_epi64(m4 ^ 0x3C, dv4, dv4_swap);
+	dv5 = _mm512_mask_blend_epi64(m5 ^ 0x3C, dv5, dv5_swap);
+	dv6 = _mm512_mask_blend_epi64(m6 ^ 0x3C, dv6, dv6_swap);
+	dv7 = _mm512_mask_blend_epi64(m7 ^ 0x3C, dv7, dv7_swap);
+	dv8 = _mm512_mask_blend_epi64(m8 ^ 0x3C, dv8, dv8_swap);
 
 	// adjacent swaps
 	dv1_swap = SWAP64(dv1);
@@ -2156,24 +2158,24 @@ void bitonic_sort_dir_64(uint64_t* data, int dir)
 	dv7_swap = SWAP64(dv7);
 	dv8_swap = SWAP64(dv8);
 	
-	m1 = _mm512_cmpgt_epu64_mask(dv1_swap, dv1);
-	m2 = _mm512_cmpgt_epu64_mask(dv2_swap, dv2);
-	m3 = _mm512_cmpgt_epu64_mask(dv3_swap, dv3);
-	m4 = _mm512_cmpgt_epu64_mask(dv4_swap, dv4);
-	m5 = _mm512_cmpgt_epu64_mask(dv5_swap, dv5);
-	m6 = _mm512_cmpgt_epu64_mask(dv6_swap, dv6);
-	m7 = _mm512_cmpgt_epu64_mask(dv7_swap, dv7);
-	m8 = _mm512_cmpgt_epu64_mask(dv8_swap, dv8);
+	m1 = _mm512_cmpgt_epu64_mask(dv1, dv1_swap);
+	m2 = _mm512_cmpgt_epu64_mask(dv2, dv2_swap);
+	m3 = _mm512_cmpgt_epu64_mask(dv3, dv3_swap);
+	m4 = _mm512_cmpgt_epu64_mask(dv4, dv4_swap);
+	m5 = _mm512_cmpgt_epu64_mask(dv5, dv5_swap);
+	m6 = _mm512_cmpgt_epu64_mask(dv6, dv6_swap);
+	m7 = _mm512_cmpgt_epu64_mask(dv7, dv7_swap);
+	m8 = _mm512_cmpgt_epu64_mask(dv8, dv8_swap);
 
-	// 'AA' for the swap between adjacent lanes ^ '0F' to alternate gt vs. lt --> 0xA5
-	dv1 = _mm512_mask_blend_epi64(m1 ^ 0xA5, dv1_swap, dv1);
-	dv2 = _mm512_mask_blend_epi64(m2 ^ 0xA5, dv2_swap, dv2);
-	dv3 = _mm512_mask_blend_epi64(m3 ^ 0xA5, dv3_swap, dv3);
-	dv4 = _mm512_mask_blend_epi64(m4 ^ 0xA5, dv4_swap, dv4);
-	dv5 = _mm512_mask_blend_epi64(m5 ^ 0xA5, dv5_swap, dv5);
-	dv6 = _mm512_mask_blend_epi64(m6 ^ 0xA5, dv6_swap, dv6);
-	dv7 = _mm512_mask_blend_epi64(m7 ^ 0xA5, dv7_swap, dv7);
-	dv8 = _mm512_mask_blend_epi64(m8 ^ 0xA5, dv8_swap, dv8);
+	// 'AA' for the swap between adjacent lanes ^ 'F0' to alternate gt vs. lt --> 0xA5
+	dv1 = _mm512_mask_blend_epi64(m1 ^ 0x5A, dv1, dv1_swap);
+	dv2 = _mm512_mask_blend_epi64(m2 ^ 0x5A, dv2, dv2_swap);
+	dv3 = _mm512_mask_blend_epi64(m3 ^ 0x5A, dv3, dv3_swap);
+	dv4 = _mm512_mask_blend_epi64(m4 ^ 0x5A, dv4, dv4_swap);
+	dv5 = _mm512_mask_blend_epi64(m5 ^ 0x5A, dv5, dv5_swap);
+	dv6 = _mm512_mask_blend_epi64(m6 ^ 0x5A, dv6, dv6_swap);
+	dv7 = _mm512_mask_blend_epi64(m7 ^ 0x5A, dv7, dv7_swap);
+	dv8 = _mm512_mask_blend_epi64(m8 ^ 0x5A, dv8, dv8_swap);
 
 
 	// phase 2
@@ -2198,14 +2200,14 @@ void bitonic_sort_dir_64(uint64_t* data, int dir)
 	m8 = _mm512_cmplt_epu64_mask(dv8, dv8_swap);
 
 	// '0F' for the swap between dist-4 lanes, non alternating
-	dv1 = _mm512_mask_blend_epi64(m1 ^ 0x0F, dv1, dv1_swap);
-	dv2 = _mm512_mask_blend_epi64(m2 ^ 0x0F, dv2, dv2_swap);
-	dv3 = _mm512_mask_blend_epi64(m3 ^ 0x0F, dv3, dv3_swap);
-	dv4 = _mm512_mask_blend_epi64(m4 ^ 0x0F, dv4, dv4_swap);
-	dv5 = _mm512_mask_blend_epi64(m5 ^ 0x0F, dv5, dv5_swap);
-	dv6 = _mm512_mask_blend_epi64(m6 ^ 0x0F, dv6, dv6_swap);
-	dv7 = _mm512_mask_blend_epi64(m7 ^ 0x0F, dv7, dv7_swap);
-	dv8 = _mm512_mask_blend_epi64(m8 ^ 0x0F, dv8, dv8_swap);
+	dv1 = _mm512_mask_blend_epi64(m1 ^ 0xF0, dv1, dv1_swap);
+	dv2 = _mm512_mask_blend_epi64(m2 ^ 0xF0, dv2, dv2_swap);
+	dv3 = _mm512_mask_blend_epi64(m3 ^ 0xF0, dv3, dv3_swap);
+	dv4 = _mm512_mask_blend_epi64(m4 ^ 0xF0, dv4, dv4_swap);
+	dv5 = _mm512_mask_blend_epi64(m5 ^ 0xF0, dv5, dv5_swap);
+	dv6 = _mm512_mask_blend_epi64(m6 ^ 0xF0, dv6, dv6_swap);
+	dv7 = _mm512_mask_blend_epi64(m7 ^ 0xF0, dv7, dv7_swap);
+	dv8 = _mm512_mask_blend_epi64(m8 ^ 0xF0, dv8, dv8_swap);
 
 	// distance 2 swaps
 	dv1_swap = SWAP128(dv1);
@@ -2246,24 +2248,24 @@ void bitonic_sort_dir_64(uint64_t* data, int dir)
 	dv7_swap = SWAP64(dv7);
 	dv8_swap = SWAP64(dv8);
 	
-	m1 = _mm512_cmpgt_epu64_mask(dv1_swap, dv1);
-	m2 = _mm512_cmplt_epu64_mask(dv2_swap, dv2);
-	m3 = _mm512_cmpgt_epu64_mask(dv3_swap, dv3);
-	m4 = _mm512_cmplt_epu64_mask(dv4_swap, dv4);
-	m5 = _mm512_cmpgt_epu64_mask(dv5_swap, dv5);
-	m6 = _mm512_cmplt_epu64_mask(dv6_swap, dv6);
-	m7 = _mm512_cmpgt_epu64_mask(dv7_swap, dv7);
-	m8 = _mm512_cmplt_epu64_mask(dv8_swap, dv8);
+	m1 = _mm512_cmpgt_epu64_mask(dv1, dv1_swap);
+	m2 = _mm512_cmplt_epu64_mask(dv2, dv2_swap);
+	m3 = _mm512_cmpgt_epu64_mask(dv3, dv3_swap);
+	m4 = _mm512_cmplt_epu64_mask(dv4, dv4_swap);
+	m5 = _mm512_cmpgt_epu64_mask(dv5, dv5_swap);
+	m6 = _mm512_cmplt_epu64_mask(dv6, dv6_swap);
+	m7 = _mm512_cmpgt_epu64_mask(dv7, dv7_swap);
+	m8 = _mm512_cmplt_epu64_mask(dv8, dv8_swap);
 
 	// 'AA' for the swap between adjacent lanes, non alternating
-	dv1 = _mm512_mask_blend_epi64(m1 ^ 0xAA, dv1_swap, dv1);
-	dv2 = _mm512_mask_blend_epi64(m2 ^ 0xAA, dv2_swap, dv2);
-	dv3 = _mm512_mask_blend_epi64(m3 ^ 0xAA, dv3_swap, dv3);
-	dv4 = _mm512_mask_blend_epi64(m4 ^ 0xAA, dv4_swap, dv4);
-	dv5 = _mm512_mask_blend_epi64(m5 ^ 0xAA, dv5_swap, dv5);
-	dv6 = _mm512_mask_blend_epi64(m6 ^ 0xAA, dv6_swap, dv6);
-	dv7 = _mm512_mask_blend_epi64(m7 ^ 0xAA, dv7_swap, dv7);
-	dv8 = _mm512_mask_blend_epi64(m8 ^ 0xAA, dv8_swap, dv8);
+	dv1 = _mm512_mask_blend_epi64(m1 ^ 0xAA, dv1, dv1_swap);
+	dv2 = _mm512_mask_blend_epi64(m2 ^ 0xAA, dv2, dv2_swap);
+	dv3 = _mm512_mask_blend_epi64(m3 ^ 0xAA, dv3, dv3_swap);
+	dv4 = _mm512_mask_blend_epi64(m4 ^ 0xAA, dv4, dv4_swap);
+	dv5 = _mm512_mask_blend_epi64(m5 ^ 0xAA, dv5, dv5_swap);
+	dv6 = _mm512_mask_blend_epi64(m6 ^ 0xAA, dv6, dv6_swap);
+	dv7 = _mm512_mask_blend_epi64(m7 ^ 0xAA, dv7, dv7_swap);
+	dv8 = _mm512_mask_blend_epi64(m8 ^ 0xAA, dv8, dv8_swap);
 
 
 	// phase 3
@@ -2306,14 +2308,14 @@ void bitonic_sort_dir_64(uint64_t* data, int dir)
 	m8 = _mm512_cmplt_epu64_mask(dv8, dv8_swap);
 
 	// '0F' for the swap between dist-4 lanes, non alternating
-	dv1 = _mm512_mask_blend_epi64(m1 ^ 0x0F, dv1_swap, dv1);
-	dv2 = _mm512_mask_blend_epi64(m2 ^ 0x0F, dv2_swap, dv2);
-	dv3 = _mm512_mask_blend_epi64(m3 ^ 0x0F, dv3_swap, dv3);
-	dv4 = _mm512_mask_blend_epi64(m4 ^ 0x0F, dv4_swap, dv4);
-	dv5 = _mm512_mask_blend_epi64(m5 ^ 0x0F, dv5_swap, dv5);
-	dv6 = _mm512_mask_blend_epi64(m6 ^ 0x0F, dv6_swap, dv6);
-	dv7 = _mm512_mask_blend_epi64(m7 ^ 0x0F, dv7_swap, dv7);
-	dv8 = _mm512_mask_blend_epi64(m8 ^ 0x0F, dv8_swap, dv8);
+	dv1 = _mm512_mask_blend_epi64(m1 ^ 0xF0, dv1, dv1_swap);
+	dv2 = _mm512_mask_blend_epi64(m2 ^ 0xF0, dv2, dv2_swap);
+	dv3 = _mm512_mask_blend_epi64(m3 ^ 0xF0, dv3, dv3_swap);
+	dv4 = _mm512_mask_blend_epi64(m4 ^ 0xF0, dv4, dv4_swap);
+	dv5 = _mm512_mask_blend_epi64(m5 ^ 0xF0, dv5, dv5_swap);
+	dv6 = _mm512_mask_blend_epi64(m6 ^ 0xF0, dv6, dv6_swap);
+	dv7 = _mm512_mask_blend_epi64(m7 ^ 0xF0, dv7, dv7_swap);
+	dv8 = _mm512_mask_blend_epi64(m8 ^ 0xF0, dv8, dv8_swap);
 
 	// distance 2 swaps
 	dv1_swap = SWAP128(dv1);
@@ -2354,24 +2356,24 @@ void bitonic_sort_dir_64(uint64_t* data, int dir)
 	dv7_swap = SWAP64(dv7);
 	dv8_swap = SWAP64(dv8);
 	
-	m1 = _mm512_cmpgt_epu64_mask(dv1_swap, dv1);
-	m2 = _mm512_cmpgt_epu64_mask(dv2_swap, dv2);
-	m3 = _mm512_cmplt_epu64_mask(dv3_swap, dv3);
-	m4 = _mm512_cmplt_epu64_mask(dv4_swap, dv4);
-	m5 = _mm512_cmpgt_epu64_mask(dv5_swap, dv5);
-	m6 = _mm512_cmpgt_epu64_mask(dv6_swap, dv6);
-	m7 = _mm512_cmplt_epu64_mask(dv7_swap, dv7);
-	m8 = _mm512_cmplt_epu64_mask(dv8_swap, dv8);
+	m1 = _mm512_cmpgt_epu64_mask(dv1, dv1_swap);
+	m2 = _mm512_cmpgt_epu64_mask(dv2, dv2_swap);
+	m3 = _mm512_cmplt_epu64_mask(dv3, dv3_swap);
+	m4 = _mm512_cmplt_epu64_mask(dv4, dv4_swap);
+	m5 = _mm512_cmpgt_epu64_mask(dv5, dv5_swap);
+	m6 = _mm512_cmpgt_epu64_mask(dv6, dv6_swap);
+	m7 = _mm512_cmplt_epu64_mask(dv7, dv7_swap);
+	m8 = _mm512_cmplt_epu64_mask(dv8, dv8_swap);
 
 	// 'AA' for the swap between adjacent lanes
-	dv1 = _mm512_mask_blend_epi64(m1 ^ 0xaa, dv1_swap, dv1);
-	dv2 = _mm512_mask_blend_epi64(m2 ^ 0xaa, dv2_swap, dv2);
-	dv3 = _mm512_mask_blend_epi64(m3 ^ 0xaa, dv3_swap, dv3);
-	dv4 = _mm512_mask_blend_epi64(m4 ^ 0xaa, dv4_swap, dv4);
-	dv5 = _mm512_mask_blend_epi64(m5 ^ 0xaa, dv5_swap, dv5);
-	dv6 = _mm512_mask_blend_epi64(m6 ^ 0xaa, dv6_swap, dv6);
-	dv7 = _mm512_mask_blend_epi64(m7 ^ 0xaa, dv7_swap, dv7);
-	dv8 = _mm512_mask_blend_epi64(m8 ^ 0xaa, dv8_swap, dv8);
+	dv1 = _mm512_mask_blend_epi64(m1 ^ 0xAA, dv1, dv1_swap);
+	dv2 = _mm512_mask_blend_epi64(m2 ^ 0xAA, dv2, dv2_swap);
+	dv3 = _mm512_mask_blend_epi64(m3 ^ 0xAA, dv3, dv3_swap);
+	dv4 = _mm512_mask_blend_epi64(m4 ^ 0xAA, dv4, dv4_swap);
+	dv5 = _mm512_mask_blend_epi64(m5 ^ 0xAA, dv5, dv5_swap);
+	dv6 = _mm512_mask_blend_epi64(m6 ^ 0xAA, dv6, dv6_swap);
+	dv7 = _mm512_mask_blend_epi64(m7 ^ 0xAA, dv7, dv7_swap);
+	dv8 = _mm512_mask_blend_epi64(m8 ^ 0xAA, dv8, dv8_swap);
 
 
 	// phase 4: merge
@@ -2437,14 +2439,14 @@ void bitonic_sort_dir_64(uint64_t* data, int dir)
 	m8 = _mm512_cmplt_epu64_mask(dv8, dv8_swap);
 
 	// '0F' for the swap between dist-4 lanes, non alternating
-	dv1 = _mm512_mask_blend_epi64(m1 ^ 0x0F, dv1_swap, dv1);
-	dv2 = _mm512_mask_blend_epi64(m2 ^ 0x0F, dv2_swap, dv2);
-	dv3 = _mm512_mask_blend_epi64(m3 ^ 0x0F, dv3_swap, dv3);
-	dv4 = _mm512_mask_blend_epi64(m4 ^ 0x0F, dv4_swap, dv4);
-	dv5 = _mm512_mask_blend_epi64(m5 ^ 0x0F, dv5_swap, dv5);
-	dv6 = _mm512_mask_blend_epi64(m6 ^ 0x0F, dv6_swap, dv6);
-	dv7 = _mm512_mask_blend_epi64(m7 ^ 0x0F, dv7_swap, dv7);
-	dv8 = _mm512_mask_blend_epi64(m8 ^ 0x0F, dv8_swap, dv8);
+	dv1 = _mm512_mask_blend_epi64(m1 ^ 0xF0, dv1, dv1_swap);
+	dv2 = _mm512_mask_blend_epi64(m2 ^ 0xF0, dv2, dv2_swap);
+	dv3 = _mm512_mask_blend_epi64(m3 ^ 0xF0, dv3, dv3_swap);
+	dv4 = _mm512_mask_blend_epi64(m4 ^ 0xF0, dv4, dv4_swap);
+	dv5 = _mm512_mask_blend_epi64(m5 ^ 0xF0, dv5, dv5_swap);
+	dv6 = _mm512_mask_blend_epi64(m6 ^ 0xF0, dv6, dv6_swap);
+	dv7 = _mm512_mask_blend_epi64(m7 ^ 0xF0, dv7, dv7_swap);
+	dv8 = _mm512_mask_blend_epi64(m8 ^ 0xF0, dv8, dv8_swap);
 
 	// distance 2 swaps
 	dv1_swap = SWAP128(dv1);
@@ -2485,24 +2487,24 @@ void bitonic_sort_dir_64(uint64_t* data, int dir)
 	dv7_swap = SWAP64(dv7);
 	dv8_swap = SWAP64(dv8);
 	
-	m1 = _mm512_cmpgt_epu64_mask(dv1_swap, dv1);
-	m2 = _mm512_cmpgt_epu64_mask(dv2_swap, dv2);
-	m3 = _mm512_cmpgt_epu64_mask(dv3_swap, dv3);
-	m4 = _mm512_cmpgt_epu64_mask(dv4_swap, dv4);
-	m5 = _mm512_cmplt_epu64_mask(dv5_swap, dv5);
-	m6 = _mm512_cmplt_epu64_mask(dv6_swap, dv6);
-	m7 = _mm512_cmplt_epu64_mask(dv7_swap, dv7);
-	m8 = _mm512_cmplt_epu64_mask(dv8_swap, dv8);
+	m1 = _mm512_cmpgt_epu64_mask(dv1, dv1_swap);
+	m2 = _mm512_cmpgt_epu64_mask(dv2, dv2_swap);
+	m3 = _mm512_cmpgt_epu64_mask(dv3, dv3_swap);
+	m4 = _mm512_cmpgt_epu64_mask(dv4, dv4_swap);
+	m5 = _mm512_cmplt_epu64_mask(dv5, dv5_swap);
+	m6 = _mm512_cmplt_epu64_mask(dv6, dv6_swap);
+	m7 = _mm512_cmplt_epu64_mask(dv7, dv7_swap);
+	m8 = _mm512_cmplt_epu64_mask(dv8, dv8_swap);
 
 	// 'AA' for the swap between adjacent lanes
-	dv1 = _mm512_mask_blend_epi64(m1 ^ 0xaa, dv1_swap, dv1);
-	dv2 = _mm512_mask_blend_epi64(m2 ^ 0xaa, dv2_swap, dv2);
-	dv3 = _mm512_mask_blend_epi64(m3 ^ 0xaa, dv3_swap, dv3);
-	dv4 = _mm512_mask_blend_epi64(m4 ^ 0xaa, dv4_swap, dv4);
-	dv5 = _mm512_mask_blend_epi64(m5 ^ 0xaa, dv5_swap, dv5);
-	dv6 = _mm512_mask_blend_epi64(m6 ^ 0xaa, dv6_swap, dv6);
-	dv7 = _mm512_mask_blend_epi64(m7 ^ 0xaa, dv7_swap, dv7);
-	dv8 = _mm512_mask_blend_epi64(m8 ^ 0xaa, dv8_swap, dv8);
+	dv1 = _mm512_mask_blend_epi64(m1 ^ 0xAA, dv1, dv1_swap);
+	dv2 = _mm512_mask_blend_epi64(m2 ^ 0xAA, dv2, dv2_swap);
+	dv3 = _mm512_mask_blend_epi64(m3 ^ 0xAA, dv3, dv3_swap);
+	dv4 = _mm512_mask_blend_epi64(m4 ^ 0xAA, dv4, dv4_swap);
+	dv5 = _mm512_mask_blend_epi64(m5 ^ 0xAA, dv5, dv5_swap);
+	dv6 = _mm512_mask_blend_epi64(m6 ^ 0xAA, dv6, dv6_swap);
+	dv7 = _mm512_mask_blend_epi64(m7 ^ 0xAA, dv7, dv7_swap);
+	dv8 = _mm512_mask_blend_epi64(m8 ^ 0xAA, dv8, dv8_swap);
 
 
 	if (dir == 1)
@@ -2587,15 +2589,15 @@ void bitonic_sort_dir_64(uint64_t* data, int dir)
 		m7 = _mm512_cmplt_epu64_mask(dv7, dv7_swap);
 		m8 = _mm512_cmplt_epu64_mask(dv8, dv8_swap);
 
-		// '0F' for the swap between dist-4 lanes, non alternating
-		dv1 = _mm512_mask_blend_epi64(m1 ^ 0x0F, dv1_swap, dv1);
-		dv2 = _mm512_mask_blend_epi64(m2 ^ 0x0F, dv2_swap, dv2);
-		dv3 = _mm512_mask_blend_epi64(m3 ^ 0x0F, dv3_swap, dv3);
-		dv4 = _mm512_mask_blend_epi64(m4 ^ 0x0F, dv4_swap, dv4);
-		dv5 = _mm512_mask_blend_epi64(m5 ^ 0x0F, dv5_swap, dv5);
-		dv6 = _mm512_mask_blend_epi64(m6 ^ 0x0F, dv6_swap, dv6);
-		dv7 = _mm512_mask_blend_epi64(m7 ^ 0x0F, dv7_swap, dv7);
-		dv8 = _mm512_mask_blend_epi64(m8 ^ 0x0F, dv8_swap, dv8);
+		// 'F0' for the swap between dist-4 lanes, non alternating
+		dv1 = _mm512_mask_blend_epi64(m1 ^ 0xF0, dv1, dv1_swap);
+		dv2 = _mm512_mask_blend_epi64(m2 ^ 0xF0, dv2, dv2_swap);
+		dv3 = _mm512_mask_blend_epi64(m3 ^ 0xF0, dv3, dv3_swap);
+		dv4 = _mm512_mask_blend_epi64(m4 ^ 0xF0, dv4, dv4_swap);
+		dv5 = _mm512_mask_blend_epi64(m5 ^ 0xF0, dv5, dv5_swap);
+		dv6 = _mm512_mask_blend_epi64(m6 ^ 0xF0, dv6, dv6_swap);
+		dv7 = _mm512_mask_blend_epi64(m7 ^ 0xF0, dv7, dv7_swap);
+		dv8 = _mm512_mask_blend_epi64(m8 ^ 0xF0, dv8, dv8_swap);
 
 		// distance 2 swaps
 		dv1_swap = SWAP128(dv1);
@@ -2636,24 +2638,24 @@ void bitonic_sort_dir_64(uint64_t* data, int dir)
 		dv7_swap = SWAP64(dv7);
 		dv8_swap = SWAP64(dv8);
 		
-		m1 = _mm512_cmplt_epu64_mask(dv1_swap, dv1);
-		m2 = _mm512_cmplt_epu64_mask(dv2_swap, dv2);
-		m3 = _mm512_cmplt_epu64_mask(dv3_swap, dv3);
-		m4 = _mm512_cmplt_epu64_mask(dv4_swap, dv4);
-		m5 = _mm512_cmplt_epu64_mask(dv5_swap, dv5);
-		m6 = _mm512_cmplt_epu64_mask(dv6_swap, dv6);
-		m7 = _mm512_cmplt_epu64_mask(dv7_swap, dv7);
-		m8 = _mm512_cmplt_epu64_mask(dv8_swap, dv8);
+		m1 = _mm512_cmplt_epu64_mask(dv1, dv1_swap);
+		m2 = _mm512_cmplt_epu64_mask(dv2, dv2_swap);
+		m3 = _mm512_cmplt_epu64_mask(dv3, dv3_swap);
+		m4 = _mm512_cmplt_epu64_mask(dv4, dv4_swap);
+		m5 = _mm512_cmplt_epu64_mask(dv5, dv5_swap);
+		m6 = _mm512_cmplt_epu64_mask(dv6, dv6_swap);
+		m7 = _mm512_cmplt_epu64_mask(dv7, dv7_swap);
+		m8 = _mm512_cmplt_epu64_mask(dv8, dv8_swap);
 
 		// 'AA' for the swap between adjacent lanes
-		dv1 = _mm512_mask_blend_epi64(m1 ^ 0xaa, dv1_swap, dv1);
-		dv2 = _mm512_mask_blend_epi64(m2 ^ 0xaa, dv2_swap, dv2);
-		dv3 = _mm512_mask_blend_epi64(m3 ^ 0xaa, dv3_swap, dv3);
-		dv4 = _mm512_mask_blend_epi64(m4 ^ 0xaa, dv4_swap, dv4);
-		dv5 = _mm512_mask_blend_epi64(m5 ^ 0xaa, dv5_swap, dv5);
-		dv6 = _mm512_mask_blend_epi64(m6 ^ 0xaa, dv6_swap, dv6);
-		dv7 = _mm512_mask_blend_epi64(m7 ^ 0xaa, dv7_swap, dv7);
-		dv8 = _mm512_mask_blend_epi64(m8 ^ 0xaa, dv8_swap, dv8);
+		dv1 = _mm512_mask_blend_epi64(m1 ^ 0xAA, dv1, dv1_swap);
+		dv2 = _mm512_mask_blend_epi64(m2 ^ 0xAA, dv2, dv2_swap);
+		dv3 = _mm512_mask_blend_epi64(m3 ^ 0xAA, dv3, dv3_swap);
+		dv4 = _mm512_mask_blend_epi64(m4 ^ 0xAA, dv4, dv4_swap);
+		dv5 = _mm512_mask_blend_epi64(m5 ^ 0xAA, dv5, dv5_swap);
+		dv6 = _mm512_mask_blend_epi64(m6 ^ 0xAA, dv6, dv6_swap);
+		dv7 = _mm512_mask_blend_epi64(m7 ^ 0xAA, dv7, dv7_swap);
+		dv8 = _mm512_mask_blend_epi64(m8 ^ 0xAA, dv8, dv8_swap);
 
 	}
 	else
@@ -2739,15 +2741,15 @@ void bitonic_sort_dir_64(uint64_t* data, int dir)
 		m7 = _mm512_cmpgt_epu64_mask(dv7, dv7_swap);
 		m8 = _mm512_cmpgt_epu64_mask(dv8, dv8_swap);
 
-		// '0F' for the swap between dist-4 lanes, non alternating
-		dv1 = _mm512_mask_blend_epi64(m1 ^ 0x0F, dv1_swap, dv1);
-		dv2 = _mm512_mask_blend_epi64(m2 ^ 0x0F, dv2_swap, dv2);
-		dv3 = _mm512_mask_blend_epi64(m3 ^ 0x0F, dv3_swap, dv3);
-		dv4 = _mm512_mask_blend_epi64(m4 ^ 0x0F, dv4_swap, dv4);
-		dv5 = _mm512_mask_blend_epi64(m5 ^ 0x0F, dv5_swap, dv5);
-		dv6 = _mm512_mask_blend_epi64(m6 ^ 0x0F, dv6_swap, dv6);
-		dv7 = _mm512_mask_blend_epi64(m7 ^ 0x0F, dv7_swap, dv7);
-		dv8 = _mm512_mask_blend_epi64(m8 ^ 0x0F, dv8_swap, dv8);
+		// 'F0' for the swap between dist-4 lanes, non alternating
+		dv1 = _mm512_mask_blend_epi64(m1 ^ 0xF0, dv1, dv1_swap);
+		dv2 = _mm512_mask_blend_epi64(m2 ^ 0xF0, dv2, dv2_swap);
+		dv3 = _mm512_mask_blend_epi64(m3 ^ 0xF0, dv3, dv3_swap);
+		dv4 = _mm512_mask_blend_epi64(m4 ^ 0xF0, dv4, dv4_swap);
+		dv5 = _mm512_mask_blend_epi64(m5 ^ 0xF0, dv5, dv5_swap);
+		dv6 = _mm512_mask_blend_epi64(m6 ^ 0xF0, dv6, dv6_swap);
+		dv7 = _mm512_mask_blend_epi64(m7 ^ 0xF0, dv7, dv7_swap);
+		dv8 = _mm512_mask_blend_epi64(m8 ^ 0xF0, dv8, dv8_swap);
 
 		// distance 2 swaps
 		dv1_swap = SWAP128(dv1);
@@ -2788,24 +2790,24 @@ void bitonic_sort_dir_64(uint64_t* data, int dir)
 		dv7_swap = SWAP64(dv7);
 		dv8_swap = SWAP64(dv8);
 		
-		m1 = _mm512_cmpgt_epu64_mask(dv1_swap, dv1);
-		m2 = _mm512_cmpgt_epu64_mask(dv2_swap, dv2);
-		m3 = _mm512_cmpgt_epu64_mask(dv3_swap, dv3);
-		m4 = _mm512_cmpgt_epu64_mask(dv4_swap, dv4);
-		m5 = _mm512_cmpgt_epu64_mask(dv5_swap, dv5);
-		m6 = _mm512_cmpgt_epu64_mask(dv6_swap, dv6);
-		m7 = _mm512_cmpgt_epu64_mask(dv7_swap, dv7);
-		m8 = _mm512_cmpgt_epu64_mask(dv8_swap, dv8);
+		m1 = _mm512_cmpgt_epu64_mask(dv1, dv1_swap);
+		m2 = _mm512_cmpgt_epu64_mask(dv2, dv2_swap);
+		m3 = _mm512_cmpgt_epu64_mask(dv3, dv3_swap);
+		m4 = _mm512_cmpgt_epu64_mask(dv4, dv4_swap);
+		m5 = _mm512_cmpgt_epu64_mask(dv5, dv5_swap);
+		m6 = _mm512_cmpgt_epu64_mask(dv6, dv6_swap);
+		m7 = _mm512_cmpgt_epu64_mask(dv7, dv7_swap);
+		m8 = _mm512_cmpgt_epu64_mask(dv8, dv8_swap);
 
 		// 'AA' for the swap between adjacent lanes
-		dv1 = _mm512_mask_blend_epi64(m1 ^ 0xaa, dv1_swap, dv1);
-		dv2 = _mm512_mask_blend_epi64(m2 ^ 0xaa, dv2_swap, dv2);
-		dv3 = _mm512_mask_blend_epi64(m3 ^ 0xaa, dv3_swap, dv3);
-		dv4 = _mm512_mask_blend_epi64(m4 ^ 0xaa, dv4_swap, dv4);
-		dv5 = _mm512_mask_blend_epi64(m5 ^ 0xaa, dv5_swap, dv5);
-		dv6 = _mm512_mask_blend_epi64(m6 ^ 0xaa, dv6_swap, dv6);
-		dv7 = _mm512_mask_blend_epi64(m7 ^ 0xaa, dv7_swap, dv7);
-		dv8 = _mm512_mask_blend_epi64(m8 ^ 0xaa, dv8_swap, dv8);
+		dv1 = _mm512_mask_blend_epi64(m1 ^ 0xAA, dv1, dv1_swap);
+		dv2 = _mm512_mask_blend_epi64(m2 ^ 0xAA, dv2, dv2_swap);
+		dv3 = _mm512_mask_blend_epi64(m3 ^ 0xAA, dv3, dv3_swap);
+		dv4 = _mm512_mask_blend_epi64(m4 ^ 0xAA, dv4, dv4_swap);
+		dv5 = _mm512_mask_blend_epi64(m5 ^ 0xAA, dv5, dv5_swap);
+		dv6 = _mm512_mask_blend_epi64(m6 ^ 0xAA, dv6, dv6_swap);
+		dv7 = _mm512_mask_blend_epi64(m7 ^ 0xAA, dv7, dv7_swap);
+		dv8 = _mm512_mask_blend_epi64(m8 ^ 0xAA, dv8, dv8_swap);
 	}
 
 	_mm512_store_epi64(data, dv1);
@@ -3593,7 +3595,7 @@ done:
 	return 0;
 }
 
-int main2(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
 	uint32 i, j, n;
 	uint32 num_sort;
@@ -3680,7 +3682,7 @@ done:
 	return 0;
 }
 
-int main(int argc, char ** argv)
+int main2(int argc, char ** argv)
 {
 	uint32 i, j, n;
 	uint32 num_sort;
