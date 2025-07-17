@@ -225,6 +225,46 @@ static __m512i swap16bit_idx;
 #define SWAP8(x) _mm512_shuffle_epi8((x), swap8bit_idx)
 #define SWAP16(x) _mm512_shuffle_epi8((x), swap16bit_idx)
 
+#define SWAP32x8(v1, v2, v3, v4, v5, v6, v7, v8) \
+	dv1_swap = SWAP32(v1);\
+	dv2_swap = SWAP32(v2);\
+	dv3_swap = SWAP32(v3);\
+	dv4_swap = SWAP32(v4);\
+	dv5_swap = SWAP32(v5);\
+	dv6_swap = SWAP32(v6);\
+	dv7_swap = SWAP32(v7);\
+	dv8_swap = SWAP32(v8);
+	
+#define SWAP64x8(v1, v2, v3, v4, v5, v6, v7, v8) \
+	dv1_swap = SWAP64(v1);\
+	dv2_swap = SWAP64(v2);\
+	dv3_swap = SWAP64(v3);\
+	dv4_swap = SWAP64(v4);\
+	dv5_swap = SWAP64(v5);\
+	dv6_swap = SWAP64(v6);\
+	dv7_swap = SWAP64(v7);\
+	dv8_swap = SWAP64(v8);
+
+#define SWAP128x8(v1, v2, v3, v4, v5, v6, v7, v8) \
+	dv1_swap = SWAP128(v1);\
+	dv2_swap = SWAP128(v2);\
+	dv3_swap = SWAP128(v3);\
+	dv4_swap = SWAP128(v4);\
+	dv5_swap = SWAP128(v5);\
+	dv6_swap = SWAP128(v6);\
+	dv7_swap = SWAP128(v7);\
+	dv8_swap = SWAP128(v8);
+
+#define SWAP256x8(v1, v2, v3, v4, v5, v6, v7, v8) \
+	dv1_swap = SWAP256(v1);\
+	dv2_swap = SWAP256(v2);\
+	dv3_swap = SWAP256(v3);\
+	dv4_swap = SWAP256(v4);\
+	dv5_swap = SWAP256(v5);\
+	dv6_swap = SWAP256(v6);\
+	dv7_swap = SWAP256(v7);\
+	dv8_swap = SWAP256(v8);
+	
 #define CMPGT(v1, v2, v3, v4, v5, v6, v7, v8) \
 	m1 = _mm512_cmpgt_epu32_mask(v1, dv1_swap);  \
 	m2 = _mm512_cmpgt_epu32_mask(v2, dv2_swap);  \
@@ -980,168 +1020,49 @@ void bitonic_sort32_dir_128(uint32_t* data, int dir)
 	// phase 0: dist-2 alternating compares ('CC')
 	
 	// adjacent swaps, alternating compares
-	dv1_swap = SWAP32(dv1);
-	dv2_swap = SWAP32(dv2);
-	dv3_swap = SWAP32(dv3);
-	dv4_swap = SWAP32(dv4);
-	dv5_swap = SWAP32(dv5);
-	dv6_swap = SWAP32(dv6);
-	dv7_swap = SWAP32(dv7);
-	dv8_swap = SWAP32(dv8);
-	
-	// 'AA' for the swap between adjacent lanes ^ 'CC' to alternate gt vs. le --> 0x66
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);				// latency 3 throughput 1	--> 8 clocks
-	//BLENDMASK(0x6666, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);	// latency 1 throughput 1	--> 8 clocks
-	MINMAX(0x6666, 0x9999, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8)
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX(0x6666, 0x9999, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
 	// phase 1: dist-4 alternating compares ('F0')
 	
 	// distance 2 swaps
-	dv1_swap = SWAP64(dv1);
-	dv2_swap = SWAP64(dv2);
-	dv3_swap = SWAP64(dv3);
-	dv4_swap = SWAP64(dv4);
-	dv5_swap = SWAP64(dv5);
-	dv6_swap = SWAP64(dv6);
-	dv7_swap = SWAP64(dv7);
-	dv8_swap = SWAP64(dv8);
-
-	// 'CC' for the swap between dist-2 lanes ^ 'F0' to alternate gt vs. le --> 0x3C
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	//BLENDMASK(0x3C3C, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0x3C3C, 0xC3C3, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8)
 
 	// adjacent swaps
-	dv1_swap = SWAP32(dv1);
-	dv2_swap = SWAP32(dv2);
-	dv3_swap = SWAP32(dv3);
-	dv4_swap = SWAP32(dv4);
-	dv5_swap = SWAP32(dv5);
-	dv6_swap = SWAP32(dv6);
-	dv7_swap = SWAP32(dv7);
-	dv8_swap = SWAP32(dv8);
-
-	// 'AA' for the swap between adjacent lanes ^ 'F0' to alternate gt vs. le --> 0x5A
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	//BLENDMASK(0x5A5A, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0x5A5A, 0xA5A5, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 	// phase 2: dist-8 alternating compares ('FF00')
 
 	// distance 4 swaps
-	dv1_swap = SWAP128(dv1);
-	dv2_swap = SWAP128(dv2);
-	dv3_swap = SWAP128(dv3);
-	dv4_swap = SWAP128(dv4);
-	dv5_swap = SWAP128(dv5);
-	dv6_swap = SWAP128(dv6);
-	dv7_swap = SWAP128(dv7);
-	dv8_swap = SWAP128(dv8);
-
-	// 'F0F0' for the swap between dist-4 lanes ^ 'FF00' to alternate gt vs. le --> 0x0FF0
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	//BLENDMASK(0x0FF0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0x0FF0, 0xf00f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 	// distance 2 swaps
-	dv1_swap = SWAP64(dv1);
-	dv2_swap = SWAP64(dv2);
-	dv3_swap = SWAP64(dv3);
-	dv4_swap = SWAP64(dv4);
-	dv5_swap = SWAP64(dv5);
-	dv6_swap = SWAP64(dv6);
-	dv7_swap = SWAP64(dv7);
-	dv8_swap = SWAP64(dv8);
-
-	// 'CCCC' for the swap between dist-2 lanes ^ 'FF00' to alternate gt vs. le --> 0x33CC
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	//BLENDMASK(0x33CC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0x33CC, 0xcc33, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 	// adjacent swaps
-	dv1_swap = SWAP32(dv1);
-	dv2_swap = SWAP32(dv2);
-	dv3_swap = SWAP32(dv3);
-	dv4_swap = SWAP32(dv4);
-	dv5_swap = SWAP32(dv5);
-	dv6_swap = SWAP32(dv6);
-	dv7_swap = SWAP32(dv7);
-	dv8_swap = SWAP32(dv8);
-
-	// 'AA' for the swap between adjacent lanes ^ 'FF00' to alternate gt vs. le --> 0x55AA
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	//BLENDMASK(0x55AA, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0x55AA, 0xaa55, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 	// phase 2: dist-16 alternating compares (alternating gt/lt)
 	
 	// distance 8 swaps (256 bits)
-	dv1_swap = SWAP256(dv1);
-	dv2_swap = SWAP256(dv2);
-	dv3_swap = SWAP256(dv3);
-	dv4_swap = SWAP256(dv4);
-	dv5_swap = SWAP256(dv5);
-	dv6_swap = SWAP256(dv6);
-	dv7_swap = SWAP256(dv7);
-	dv8_swap = SWAP256(dv8);
-
-	// 'FF00' for the swap between dist-8 lanes, non alternating 
-	// (b/c we do separate gt/lt compares of 16 elements with dist-8 swaps)
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT);
-	//BLENDMASK(0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt1(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 	// distance 4 swaps
-	dv1_swap = SWAP128(dv1);
-	dv2_swap = SWAP128(dv2);
-	dv3_swap = SWAP128(dv3);
-	dv4_swap = SWAP128(dv4);
-	dv5_swap = SWAP128(dv5);
-	dv6_swap = SWAP128(dv6);
-	dv7_swap = SWAP128(dv7);
-	dv8_swap = SWAP128(dv8);
-
-	// 'F0' for the swap between dist-4 lanes, non alternating
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT);
-	//BLENDMASK(0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt1(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 	// distance 2 swaps
-	dv1_swap = SWAP64(dv1);
-	dv2_swap = SWAP64(dv2);
-	dv3_swap = SWAP64(dv3);
-	dv4_swap = SWAP64(dv4);
-	dv5_swap = SWAP64(dv5);
-	dv6_swap = SWAP64(dv6);
-	dv7_swap = SWAP64(dv7);
-	dv8_swap = SWAP64(dv8);
-
-	// 'CC' for the swap between dist-2 lanes, non alternating
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT);
-	//BLENDMASK(0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt1(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 	// adjacent swaps
-	dv1_swap = SWAP32(dv1);
-	dv2_swap = SWAP32(dv2);
-	dv3_swap = SWAP32(dv3);
-	dv4_swap = SWAP32(dv4);
-	dv5_swap = SWAP32(dv5);
-	dv6_swap = SWAP32(dv6);
-	dv7_swap = SWAP32(dv7);
-	dv8_swap = SWAP32(dv8);
-
-	// 'AA' for the swap between adjacent lanes, non alternating
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT);
-	//BLENDMASK(0xAAAA, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt1(0xAAAA, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 	// phase 3: dist-32 alternating compares (alternating gtgt/ltlt)
@@ -1161,72 +1082,19 @@ void bitonic_sort32_dir_128(uint32_t* data, int dir)
 	dv7 = t4;
 
 	// distance 8 swaps (256 bits)
-	dv1_swap = SWAP256(dv1);
-	dv2_swap = SWAP256(dv2);
-	dv3_swap = SWAP256(dv3);
-	dv4_swap = SWAP256(dv4);
-	dv5_swap = SWAP256(dv5);
-	dv6_swap = SWAP256(dv6);
-	dv7_swap = SWAP256(dv7);
-	dv8_swap = SWAP256(dv8);
-
-	// 'FF00' for the swap between dist-8 lanes, non alternating 
-	// (b/c we do separate gt/lt compares of 16 elements with dist-8 swaps)
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt2(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 	// distance 4 swaps
-	dv1_swap = SWAP128(dv1);
-	dv2_swap = SWAP128(dv2);
-	dv3_swap = SWAP128(dv3);
-	dv4_swap = SWAP128(dv4);
-	dv5_swap = SWAP128(dv5);
-	dv6_swap = SWAP128(dv6);
-	dv7_swap = SWAP128(dv7);
-	dv8_swap = SWAP128(dv8);
-
-	// 'F0' for the swap between dist-4 lanes, non alternating
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt2(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 	// distance 2 swaps
-	dv1_swap = SWAP64(dv1);
-	dv2_swap = SWAP64(dv2);
-	dv3_swap = SWAP64(dv3);
-	dv4_swap = SWAP64(dv4);
-	dv5_swap = SWAP64(dv5);
-	dv6_swap = SWAP64(dv6);
-	dv7_swap = SWAP64(dv7);
-	dv8_swap = SWAP64(dv8);
-
-	// 'CC' for the swap between dist-2 lanes, non alternating
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt2(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 	// adjacent swaps
-	dv1_swap = SWAP32(dv1);
-	dv2_swap = SWAP32(dv2);
-	dv3_swap = SWAP32(dv3);
-	dv4_swap = SWAP32(dv4);
-	dv5_swap = SWAP32(dv5);
-	dv6_swap = SWAP32(dv6);
-	dv7_swap = SWAP32(dv7);
-	dv8_swap = SWAP32(dv8);
-
-	// 'AA' for the swap between adjacent lanes
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xAAAA, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt2(0xAAAA, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
 	// phase 4: dist-64 alternating compares (alternating gtgtgtgt/ltltltlt)
@@ -1260,71 +1128,19 @@ void bitonic_sort32_dir_128(uint32_t* data, int dir)
 	dv7 = t4;
 	
 	// distance 8 swaps (256 bits)
-	dv1_swap = SWAP256(dv1);
-	dv2_swap = SWAP256(dv2);
-	dv3_swap = SWAP256(dv3);
-	dv4_swap = SWAP256(dv4);
-	dv5_swap = SWAP256(dv5);
-	dv6_swap = SWAP256(dv6);
-	dv7_swap = SWAP256(dv7);
-	dv8_swap = SWAP256(dv8);
-
-	// 'FF00' for the swap between dist-8 lanes, non alternating 
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, 
-	//		_MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt4(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
 	// distance 4 swaps
-	dv1_swap = SWAP128(dv1);
-	dv2_swap = SWAP128(dv2);
-	dv3_swap = SWAP128(dv3);
-	dv4_swap = SWAP128(dv4);
-	dv5_swap = SWAP128(dv5);
-	dv6_swap = SWAP128(dv6);
-	dv7_swap = SWAP128(dv7);
-	dv8_swap = SWAP128(dv8);
-
-	// 'F0' for the swap between dist-4 lanes, non alternating
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, 
-	//		_MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt4(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
 	// distance 2 swaps
-	dv1_swap = SWAP64(dv1);
-	dv2_swap = SWAP64(dv2);
-	dv3_swap = SWAP64(dv3);
-	dv4_swap = SWAP64(dv4);
-	dv5_swap = SWAP64(dv5);
-	dv6_swap = SWAP64(dv6);
-	dv7_swap = SWAP64(dv7);
-	dv8_swap = SWAP64(dv8);
-
-	// 'CC' for the swap between dist-2 lanes, non alternating
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, 
-	//		_MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt4(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
 	// adjacent swaps
-	dv1_swap = SWAP32(dv1);
-	dv2_swap = SWAP32(dv2);
-	dv3_swap = SWAP32(dv3);
-	dv4_swap = SWAP32(dv4);
-	dv5_swap = SWAP32(dv5);
-	dv6_swap = SWAP32(dv6);
-	dv7_swap = SWAP32(dv7);
-	dv8_swap = SWAP32(dv8);
-
-	// 'AA' for the swap between adjacent lanes
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, 
-	//		_MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xAAAA, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt4(0xAAAA, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 
@@ -1374,63 +1190,19 @@ void bitonic_sort32_dir_128(uint32_t* data, int dir)
 		dv7 = t4;
 		
 		// distance 8 swaps - 256 bits
-		dv1_swap = SWAP256(dv1);
-		dv2_swap = SWAP256(dv2);
-		dv3_swap = SWAP256(dv3);
-		dv4_swap = SWAP256(dv4);
-		dv5_swap = SWAP256(dv5);
-		dv6_swap = SWAP256(dv6);
-		dv7_swap = SWAP256(dv7);
-		dv8_swap = SWAP256(dv8);
-
-		// 'FF00' for the swap between dist-8 lanes
-		//CMPLT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0x00ff, 0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
 		// distance 4 swaps
-		dv1_swap = SWAP128(dv1);
-		dv2_swap = SWAP128(dv2);
-		dv3_swap = SWAP128(dv3);
-		dv4_swap = SWAP128(dv4);
-		dv5_swap = SWAP128(dv5);
-		dv6_swap = SWAP128(dv6);
-		dv7_swap = SWAP128(dv7);
-		dv8_swap = SWAP128(dv8);
-
-		// 'F0' for the swap between dist-4 lanes, non alternating
-		//CMPLT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0x0f0f, 0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
 		// distance 2 swaps
-		dv1_swap = SWAP64(dv1);
-		dv2_swap = SWAP64(dv2);
-		dv3_swap = SWAP64(dv3);
-		dv4_swap = SWAP64(dv4);
-		dv5_swap = SWAP64(dv5);
-		dv6_swap = SWAP64(dv6);
-		dv7_swap = SWAP64(dv7);
-		dv8_swap = SWAP64(dv8);
-
-		// 'CC' for the swap between dist-2 lanes, non alternating
-		//CMPLT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0x3333, 0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
 		// adjacent swaps
-		dv1_swap = SWAP32(dv1);
-		dv2_swap = SWAP32(dv2);
-		dv3_swap = SWAP32(dv3);
-		dv4_swap = SWAP32(dv4);
-		dv5_swap = SWAP32(dv5);
-		dv6_swap = SWAP32(dv6);
-		dv7_swap = SWAP32(dv7);
-		dv8_swap = SWAP32(dv8);
-
-		// 'AA' for the swap between adjacent lanes
-		//CMPLT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xAAAA, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0x5555, 0xaaaa, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 	}
@@ -1479,63 +1251,19 @@ void bitonic_sort32_dir_128(uint32_t* data, int dir)
 		dv7 = t4;
 
 		// distance 8 swaps - 256 bits
-		dv1_swap = SWAP256(dv1);
-		dv2_swap = SWAP256(dv2);
-		dv3_swap = SWAP256(dv3);
-		dv4_swap = SWAP256(dv4);
-		dv5_swap = SWAP256(dv5);
-		dv6_swap = SWAP256(dv6);
-		dv7_swap = SWAP256(dv7);
-		dv8_swap = SWAP256(dv8);
-
-		// '00FF' for the swap between dist-8 lanes
-		//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
 		// distance 4 swaps
-		dv1_swap = SWAP128(dv1);
-		dv2_swap = SWAP128(dv2);
-		dv3_swap = SWAP128(dv3);
-		dv4_swap = SWAP128(dv4);
-		dv5_swap = SWAP128(dv5);
-		dv6_swap = SWAP128(dv6);
-		dv7_swap = SWAP128(dv7);
-		dv8_swap = SWAP128(dv8);
-
-		// '0F' for the swap between dist-4 lanes, non alternating
-		//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0xf0f0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 		// distance 2 swaps
-		dv1_swap = SWAP64(dv1);
-		dv2_swap = SWAP64(dv2);
-		dv3_swap = SWAP64(dv3);
-		dv4_swap = SWAP64(dv4);
-		dv5_swap = SWAP64(dv5);
-		dv6_swap = SWAP64(dv6);
-		dv7_swap = SWAP64(dv7);
-		dv8_swap = SWAP64(dv8);
-
-		// 'CC' for the swap between dist-2 lanes, non alternating
-		//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
 		// adjacent swaps
-		dv1_swap = SWAP32(dv1);
-		dv2_swap = SWAP32(dv2);
-		dv3_swap = SWAP32(dv3);
-		dv4_swap = SWAP32(dv4);
-		dv5_swap = SWAP32(dv5);
-		dv6_swap = SWAP32(dv6);
-		dv7_swap = SWAP32(dv7);
-		dv8_swap = SWAP32(dv8);
-
-		// 'AA' for the swap between adjacent lanes
-		//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xAAAA, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0xaaaa, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 	}
@@ -1618,308 +1346,79 @@ void bitonic_sort32_dir_256(uint32_t* data, int dir)
 	// phase 0: dist-2 alternating compares ('CC')
 	
 	// adjacent swaps, alternating compares
-	dv1_swap = SWAP32(dv1);
-	dv2_swap = SWAP32(dv2);
-	dv3_swap = SWAP32(dv3);
-	dv4_swap = SWAP32(dv4);
-	dv5_swap = SWAP32(dv5);
-	dv6_swap = SWAP32(dv6);
-	dv7_swap = SWAP32(dv7);
-	dv8_swap = SWAP32(dv8);
-	
-	// 'AA' for the swap between adjacent lanes ^ 'CC' to alternate gt vs. le --> 0x66
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);				// latency 3 throughput 1	--> 8 clocks
-	//BLENDMASK(0x6666, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);	// latency 1 throughput 1	--> 8 clocks
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0x6666, 0x9999, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8)
 
-	
-	dv1_swap = SWAP32(dv9);
-	dv2_swap = SWAP32(dv10);
-	dv3_swap = SWAP32(dv11);
-	dv4_swap = SWAP32(dv12);
-	dv5_swap = SWAP32(dv13);
-	dv6_swap = SWAP32(dv14);
-	dv7_swap = SWAP32(dv15);
-	dv8_swap = SWAP32(dv16);
-	
-	//CMPGT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-	//BLENDMASK(0x6666, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP32x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX(0x6666, 0x9999, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16)
 	
 	// phase 1: dist-4 alternating compares ('F0')
 	
 	// distance 2 swaps
-	dv1_swap = SWAP64(dv1);
-	dv2_swap = SWAP64(dv2);
-	dv3_swap = SWAP64(dv3);
-	dv4_swap = SWAP64(dv4);
-	dv5_swap = SWAP64(dv5);
-	dv6_swap = SWAP64(dv6);
-	dv7_swap = SWAP64(dv7);
-	dv8_swap = SWAP64(dv8);
-
-	// 'CC' for the swap between dist-2 lanes ^ 'F0' to alternate gt vs. le --> 0x3C
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	//BLENDMASK(0x3C3C, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0x3C3C, 0xC3C3, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8)
 	
-	dv1_swap = SWAP64(dv9);
-	dv2_swap = SWAP64(dv10);
-	dv3_swap = SWAP64(dv11);
-	dv4_swap = SWAP64(dv12);
-	dv5_swap = SWAP64(dv13);
-	dv6_swap = SWAP64(dv14);
-	dv7_swap = SWAP64(dv15);
-	dv8_swap = SWAP64(dv16);
-	
-	//CMPGT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-	//BLENDMASK(0x3C3C, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP64x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX(0x3C3C, 0xC3C3, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 
 	// adjacent swaps
-	dv1_swap = SWAP32(dv1);
-	dv2_swap = SWAP32(dv2);
-	dv3_swap = SWAP32(dv3);
-	dv4_swap = SWAP32(dv4);
-	dv5_swap = SWAP32(dv5);
-	dv6_swap = SWAP32(dv6);
-	dv7_swap = SWAP32(dv7);
-	dv8_swap = SWAP32(dv8);
-
-	// 'AA' for the swap between adjacent lanes ^ 'F0' to alternate gt vs. le --> 0x5A
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	//BLENDMASK(0x5A5A, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0x5A5A, 0xA5A5, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP32(dv9);
-	dv2_swap = SWAP32(dv10);
-	dv3_swap = SWAP32(dv11);
-	dv4_swap = SWAP32(dv12);
-	dv5_swap = SWAP32(dv13);
-	dv6_swap = SWAP32(dv14);
-	dv7_swap = SWAP32(dv15);
-	dv8_swap = SWAP32(dv16);
-	
-	//CMPGT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-	//BLENDMASK(0x5a5a, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP32x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX(0x5A5A, 0xA5A5, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 
 	// phase 2: dist-8 alternating compares ('FF00')
 
 	// distance 4 swaps
-	dv1_swap = SWAP128(dv1);
-	dv2_swap = SWAP128(dv2);
-	dv3_swap = SWAP128(dv3);
-	dv4_swap = SWAP128(dv4);
-	dv5_swap = SWAP128(dv5);
-	dv6_swap = SWAP128(dv6);
-	dv7_swap = SWAP128(dv7);
-	dv8_swap = SWAP128(dv8);
-
-	// 'F0F0' for the swap between dist-4 lanes ^ 'FF00' to alternate gt vs. le --> 0x0FF0
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	//BLENDMASK(0x0FF0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0x0FF0, 0xf00f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP128(dv9);
-	dv2_swap = SWAP128(dv10);
-	dv3_swap = SWAP128(dv11);
-	dv4_swap = SWAP128(dv12);
-	dv5_swap = SWAP128(dv13);
-	dv6_swap = SWAP128(dv14);
-	dv7_swap = SWAP128(dv15);
-	dv8_swap = SWAP128(dv16);
-	
-	//CMPGT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-	//BLENDMASK(0x0ff0, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP128x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX(0x0FF0, 0xf00f, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 
 	// distance 2 swaps
-	dv1_swap = SWAP64(dv1);
-	dv2_swap = SWAP64(dv2);
-	dv3_swap = SWAP64(dv3);
-	dv4_swap = SWAP64(dv4);
-	dv5_swap = SWAP64(dv5);
-	dv6_swap = SWAP64(dv6);
-	dv7_swap = SWAP64(dv7);
-	dv8_swap = SWAP64(dv8);
-
-	// 'CCCC' for the swap between dist-2 lanes ^ 'FF00' to alternate gt vs. le --> 0x33CC
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	//BLENDMASK(0x33CC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0x33CC, 0xcc33, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP64(dv9);
-	dv2_swap = SWAP64(dv10);
-	dv3_swap = SWAP64(dv11);
-	dv4_swap = SWAP64(dv12);
-	dv5_swap = SWAP64(dv13);
-	dv6_swap = SWAP64(dv14);
-	dv7_swap = SWAP64(dv15);
-	dv8_swap = SWAP64(dv16);
-	
-	//CMPGT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-	//BLENDMASK(0x33cc, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP64x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX(0x33CC, 0xcc33, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 
 	// adjacent swaps
-	dv1_swap = SWAP32(dv1);
-	dv2_swap = SWAP32(dv2);
-	dv3_swap = SWAP32(dv3);
-	dv4_swap = SWAP32(dv4);
-	dv5_swap = SWAP32(dv5);
-	dv6_swap = SWAP32(dv6);
-	dv7_swap = SWAP32(dv7);
-	dv8_swap = SWAP32(dv8);
-
-	// 'AA' for the swap between adjacent lanes ^ 'FF00' to alternate gt vs. le --> 0x55AA
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	//BLENDMASK(0x55AA, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0x55AA, 0xaa55, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP32(dv9);
-	dv2_swap = SWAP32(dv10);
-	dv3_swap = SWAP32(dv11);
-	dv4_swap = SWAP32(dv12);
-	dv5_swap = SWAP32(dv13);
-	dv6_swap = SWAP32(dv14);
-	dv7_swap = SWAP32(dv15);
-	dv8_swap = SWAP32(dv16);
-	
-	//CMPGT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-	//BLENDMASK(0x55aa, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP32x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX(0x55AA, 0xaa55, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 
 	// phase 2: dist-16 alternating compares (alternating gt/lt)
 	
 	// distance 8 swaps (256 bits)
-	dv1_swap = SWAP256(dv1);
-	dv2_swap = SWAP256(dv2);
-	dv3_swap = SWAP256(dv3);
-	dv4_swap = SWAP256(dv4);
-	dv5_swap = SWAP256(dv5);
-	dv6_swap = SWAP256(dv6);
-	dv7_swap = SWAP256(dv7);
-	dv8_swap = SWAP256(dv8);
-
-	// 'FF00' for the swap between dist-8 lanes, non alternating 
-	// (b/c we do separate gt/lt compares of 16 elements with dist-8 swaps)
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT);
-	//BLENDMASK(0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt1(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	
-	dv1_swap = SWAP256(dv9);
-	dv2_swap = SWAP256(dv10);
-	dv3_swap = SWAP256(dv11);
-	dv4_swap = SWAP256(dv12);
-	dv5_swap = SWAP256(dv13);
-	dv6_swap = SWAP256(dv14);
-	dv7_swap = SWAP256(dv15);
-	dv8_swap = SWAP256(dv16);
-	
-	//CMP(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT);
-	//BLENDMASK(0xff00, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP256x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX_alt1(0xFF00, 0x00ff, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 
 	// distance 4 swaps
-	dv1_swap = SWAP128(dv1);
-	dv2_swap = SWAP128(dv2);
-	dv3_swap = SWAP128(dv3);
-	dv4_swap = SWAP128(dv4);
-	dv5_swap = SWAP128(dv5);
-	dv6_swap = SWAP128(dv6);
-	dv7_swap = SWAP128(dv7);
-	dv8_swap = SWAP128(dv8);
-
-	// 'F0' for the swap between dist-4 lanes, non alternating
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT);
-	//BLENDMASK(0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt1(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP128(dv9);
-	dv2_swap = SWAP128(dv10);
-	dv3_swap = SWAP128(dv11);
-	dv4_swap = SWAP128(dv12);
-	dv5_swap = SWAP128(dv13);
-	dv6_swap = SWAP128(dv14);
-	dv7_swap = SWAP128(dv15);
-	dv8_swap = SWAP128(dv16);
-	
-	//CMP(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT);
-	//BLENDMASK(0xf0f0, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP128x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX_alt1(0xF0F0, 0x0f0f, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 
 	// distance 2 swaps
-	dv1_swap = SWAP64(dv1);
-	dv2_swap = SWAP64(dv2);
-	dv3_swap = SWAP64(dv3);
-	dv4_swap = SWAP64(dv4);
-	dv5_swap = SWAP64(dv5);
-	dv6_swap = SWAP64(dv6);
-	dv7_swap = SWAP64(dv7);
-	dv8_swap = SWAP64(dv8);
-
-	// 'CC' for the swap between dist-2 lanes, non alternating
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT);
-	//BLENDMASK(0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt1(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP64(dv9);
-	dv2_swap = SWAP64(dv10);
-	dv3_swap = SWAP64(dv11);
-	dv4_swap = SWAP64(dv12);
-	dv5_swap = SWAP64(dv13);
-	dv6_swap = SWAP64(dv14);
-	dv7_swap = SWAP64(dv15);
-	dv8_swap = SWAP64(dv16);
-	
-	//CMP(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT);
-	//BLENDMASK(0xcccc, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP64x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX_alt1(0xCCCC, 0x3333, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 
 	// adjacent swaps
-	dv1_swap = SWAP32(dv1);
-	dv2_swap = SWAP32(dv2);
-	dv3_swap = SWAP32(dv3);
-	dv4_swap = SWAP32(dv4);
-	dv5_swap = SWAP32(dv5);
-	dv6_swap = SWAP32(dv6);
-	dv7_swap = SWAP32(dv7);
-	dv8_swap = SWAP32(dv8);
-
-	// 'AA' for the swap between adjacent lanes, non alternating
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT);
-	//BLENDMASK(0xAAAA, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt1(0xAAAA, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP32(dv9);
-	dv2_swap = SWAP32(dv10);
-	dv3_swap = SWAP32(dv11);
-	dv4_swap = SWAP32(dv12);
-	dv5_swap = SWAP32(dv13);
-	dv6_swap = SWAP32(dv14);
-	dv7_swap = SWAP32(dv15);
-	dv8_swap = SWAP32(dv16);
-	
-	//CMP(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_NLE, _MM_CMPINT_LT);
-	//BLENDMASK(0xaaaa, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP32x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX_alt1(0xAAAA, 0x5555, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 
 	// phase 3: dist-32 alternating compares (alternating gtgt/ltlt)
@@ -1952,132 +1451,31 @@ void bitonic_sort32_dir_256(uint32_t* data, int dir)
 	dv15 = t4;
 
 	// distance 8 swaps (256 bits)
-	dv1_swap = SWAP256(dv1);
-	dv2_swap = SWAP256(dv2);
-	dv3_swap = SWAP256(dv3);
-	dv4_swap = SWAP256(dv4);
-	dv5_swap = SWAP256(dv5);
-	dv6_swap = SWAP256(dv6);
-	dv7_swap = SWAP256(dv7);
-	dv8_swap = SWAP256(dv8);
-
-	// 'FF00' for the swap between dist-8 lanes, non alternating 
-	// (b/c we do separate gt/lt compares of 16 elements with dist-8 swaps)
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt2(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP256(dv9);
-	dv2_swap = SWAP256(dv10);
-	dv3_swap = SWAP256(dv11);
-	dv4_swap = SWAP256(dv12);
-	dv5_swap = SWAP256(dv13);
-	dv6_swap = SWAP256(dv14);
-	dv7_swap = SWAP256(dv15);
-	dv8_swap = SWAP256(dv16);
-	
-	//CMP(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xff00, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP256x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX_alt2(0xFF00, 0x00ff, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 
 	// distance 4 swaps
-	dv1_swap = SWAP128(dv1);
-	dv2_swap = SWAP128(dv2);
-	dv3_swap = SWAP128(dv3);
-	dv4_swap = SWAP128(dv4);
-	dv5_swap = SWAP128(dv5);
-	dv6_swap = SWAP128(dv6);
-	dv7_swap = SWAP128(dv7);
-	dv8_swap = SWAP128(dv8);
-
-	// 'F0' for the swap between dist-4 lanes, non alternating
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt2(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP128(dv9);
-	dv2_swap = SWAP128(dv10);
-	dv3_swap = SWAP128(dv11);
-	dv4_swap = SWAP128(dv12);
-	dv5_swap = SWAP128(dv13);
-	dv6_swap = SWAP128(dv14);
-	dv7_swap = SWAP128(dv15);
-	dv8_swap = SWAP128(dv16);
-	
-	//CMP(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xf0f0, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP128x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX_alt2(0xF0F0, 0x0f0f, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 
 	// distance 2 swaps
-	dv1_swap = SWAP64(dv1);
-	dv2_swap = SWAP64(dv2);
-	dv3_swap = SWAP64(dv3);
-	dv4_swap = SWAP64(dv4);
-	dv5_swap = SWAP64(dv5);
-	dv6_swap = SWAP64(dv6);
-	dv7_swap = SWAP64(dv7);
-	dv8_swap = SWAP64(dv8);
-
-	// 'CC' for the swap between dist-2 lanes, non alternating
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt2(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP64(dv9);
-	dv2_swap = SWAP64(dv10);
-	dv3_swap = SWAP64(dv11);
-	dv4_swap = SWAP64(dv12);
-	dv5_swap = SWAP64(dv13);
-	dv6_swap = SWAP64(dv14);
-	dv7_swap = SWAP64(dv15);
-	dv8_swap = SWAP64(dv16);
-	
-	//CMP(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xcccc, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP64x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX_alt2(0xCCCC, 0x3333, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 
 	// adjacent swaps
-	dv1_swap = SWAP32(dv1);
-	dv2_swap = SWAP32(dv2);
-	dv3_swap = SWAP32(dv3);
-	dv4_swap = SWAP32(dv4);
-	dv5_swap = SWAP32(dv5);
-	dv6_swap = SWAP32(dv6);
-	dv7_swap = SWAP32(dv7);
-	dv8_swap = SWAP32(dv8);
-
-	// 'AA' for the swap between adjacent lanes
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xAAAA, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt2(0xAAAA, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP32(dv9);
-	dv2_swap = SWAP32(dv10);
-	dv3_swap = SWAP32(dv11);
-	dv4_swap = SWAP32(dv12);
-	dv5_swap = SWAP32(dv13);
-	dv6_swap = SWAP32(dv14);
-	dv7_swap = SWAP32(dv15);
-	dv8_swap = SWAP32(dv16);
-	
-	//CMP(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT, 
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xaaaa, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP32x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX_alt2(0xAAAA, 0x5555, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	
 	// phase 4: dist-64 alternating compares (alternating gtgtgtgt/ltltltlt)
@@ -2137,133 +1535,32 @@ void bitonic_sort32_dir_256(uint32_t* data, int dir)
 	dv15 = t4;
 	
 	// distance 8 swaps (256 bits)
-	dv1_swap = SWAP256(dv1);
-	dv2_swap = SWAP256(dv2);
-	dv3_swap = SWAP256(dv3);
-	dv4_swap = SWAP256(dv4);
-	dv5_swap = SWAP256(dv5);
-	dv6_swap = SWAP256(dv6);
-	dv7_swap = SWAP256(dv7);
-	dv8_swap = SWAP256(dv8);
-
-	// 'FF00' for the swap between dist-8 lanes, non alternating 
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, 
-	//		_MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt4(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP256(dv9);
-	dv2_swap = SWAP256(dv10);
-	dv3_swap = SWAP256(dv11);
-	dv4_swap = SWAP256(dv12);
-	dv5_swap = SWAP256(dv13);
-	dv6_swap = SWAP256(dv14);
-	dv7_swap = SWAP256(dv15);
-	dv8_swap = SWAP256(dv16);
-	
-	//CMP(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, 
-	//		_MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xff00, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP256x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX_alt4(0xFF00, 0x00ff, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	
 	// distance 4 swaps
-	dv1_swap = SWAP128(dv1);
-	dv2_swap = SWAP128(dv2);
-	dv3_swap = SWAP128(dv3);
-	dv4_swap = SWAP128(dv4);
-	dv5_swap = SWAP128(dv5);
-	dv6_swap = SWAP128(dv6);
-	dv7_swap = SWAP128(dv7);
-	dv8_swap = SWAP128(dv8);
-
-	// 'F0' for the swap between dist-4 lanes, non alternating
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, 
-	//		_MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt4(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP128(dv9);
-	dv2_swap = SWAP128(dv10);
-	dv3_swap = SWAP128(dv11);
-	dv4_swap = SWAP128(dv12);
-	dv5_swap = SWAP128(dv13);
-	dv6_swap = SWAP128(dv14);
-	dv7_swap = SWAP128(dv15);
-	dv8_swap = SWAP128(dv16);
-	
-	//CMP(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, 
-	//		_MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xf0f0, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP128x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX_alt4(0xF0F0, 0x0f0f, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	
 	// distance 2 swaps
-	dv1_swap = SWAP64(dv1);
-	dv2_swap = SWAP64(dv2);
-	dv3_swap = SWAP64(dv3);
-	dv4_swap = SWAP64(dv4);
-	dv5_swap = SWAP64(dv5);
-	dv6_swap = SWAP64(dv6);
-	dv7_swap = SWAP64(dv7);
-	dv8_swap = SWAP64(dv8);
-
-	// 'CC' for the swap between dist-2 lanes, non alternating
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, 
-	//		_MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt4(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP64(dv9);
-	dv2_swap = SWAP64(dv10);
-	dv3_swap = SWAP64(dv11);
-	dv4_swap = SWAP64(dv12);
-	dv5_swap = SWAP64(dv13);
-	dv6_swap = SWAP64(dv14);
-	dv7_swap = SWAP64(dv15);
-	dv8_swap = SWAP64(dv16);
-	
-	//CMP(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, 
-	//		_MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xcccc, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP64x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX_alt4(0xCCCC, 0x3333, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	
 	// adjacent swaps
-	dv1_swap = SWAP32(dv1);
-	dv2_swap = SWAP32(dv2);
-	dv3_swap = SWAP32(dv3);
-	dv4_swap = SWAP32(dv4);
-	dv5_swap = SWAP32(dv5);
-	dv6_swap = SWAP32(dv6);
-	dv7_swap = SWAP32(dv7);
-	dv8_swap = SWAP32(dv8);
-
-	// 'AA' for the swap between adjacent lanes
-	//CMP(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, 
-	//		_MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xAAAA, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX_alt4(0xAAAA, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP32(dv9);
-	dv2_swap = SWAP32(dv10);
-	dv3_swap = SWAP32(dv11);
-	dv4_swap = SWAP32(dv12);
-	dv5_swap = SWAP32(dv13);
-	dv6_swap = SWAP32(dv14);
-	dv7_swap = SWAP32(dv15);
-	dv8_swap = SWAP32(dv16);
-	
-	//CMP(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16,
-	//		_MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, _MM_CMPINT_NLE, 
-	//		_MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT, _MM_CMPINT_LT);
-	//BLENDMASK(0xaaaa, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP32x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX_alt4(0xAAAA, 0x5555, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-	
 	
 	// phase 5: dist-128 alternating compares (alternating gtgtgtgtgtgtgtgt/ltltltltltltltlt)
 	
@@ -2350,115 +1647,31 @@ void bitonic_sort32_dir_256(uint32_t* data, int dir)
 	dv15 = t4;
 	
 	// distance 8 swaps (256 bits)
-	dv1_swap = SWAP256(dv1);
-	dv2_swap = SWAP256(dv2);
-	dv3_swap = SWAP256(dv3);
-	dv4_swap = SWAP256(dv4);
-	dv5_swap = SWAP256(dv5);
-	dv6_swap = SWAP256(dv6);
-	dv7_swap = SWAP256(dv7);
-	dv8_swap = SWAP256(dv8);
-
-	// 'FF00' for the swap between dist-8 lanes, non alternating 
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	//BLENDMASK(0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0xff00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP256(dv9);
-	dv2_swap = SWAP256(dv10);
-	dv3_swap = SWAP256(dv11);
-	dv4_swap = SWAP256(dv12);
-	dv5_swap = SWAP256(dv13);
-	dv6_swap = SWAP256(dv14);
-	dv7_swap = SWAP256(dv15);
-	dv8_swap = SWAP256(dv16);
-	
-	//CMPLT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-	//BLENDMASK(0xff00, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP256x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX(0x00ff, 0xff00, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	
 	// distance 4 swaps
-	dv1_swap = SWAP128(dv1);
-	dv2_swap = SWAP128(dv2);
-	dv3_swap = SWAP128(dv3);
-	dv4_swap = SWAP128(dv4);
-	dv5_swap = SWAP128(dv5);
-	dv6_swap = SWAP128(dv6);
-	dv7_swap = SWAP128(dv7);
-	dv8_swap = SWAP128(dv8);
-
-	// 'F0' for the swap between dist-4 lanes, non alternating
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	//BLENDMASK(0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP128(dv9);
-	dv2_swap = SWAP128(dv10);
-	dv3_swap = SWAP128(dv11);
-	dv4_swap = SWAP128(dv12);
-	dv5_swap = SWAP128(dv13);
-	dv6_swap = SWAP128(dv14);
-	dv7_swap = SWAP128(dv15);
-	dv8_swap = SWAP128(dv16);
-	
-	//CMPLT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-	//BLENDMASK(0xf0f0, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP128x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX(0x0f0f, 0xF0F0, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	
 	// distance 2 swaps
-	dv1_swap = SWAP64(dv1);
-	dv2_swap = SWAP64(dv2);
-	dv3_swap = SWAP64(dv3);
-	dv4_swap = SWAP64(dv4);
-	dv5_swap = SWAP64(dv5);
-	dv6_swap = SWAP64(dv6);
-	dv7_swap = SWAP64(dv7);
-	dv8_swap = SWAP64(dv8);
-
-	// 'CC' for the swap between dist-2 lanes, non alternating
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	//BLENDMASK(0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0xcccc, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP64(dv9);
-	dv2_swap = SWAP64(dv10);
-	dv3_swap = SWAP64(dv11);
-	dv4_swap = SWAP64(dv12);
-	dv5_swap = SWAP64(dv13);
-	dv6_swap = SWAP64(dv14);
-	dv7_swap = SWAP64(dv15);
-	dv8_swap = SWAP64(dv16);
-	
-	//CMPLT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-	//BLENDMASK(0xcccc, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP64x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX(0x3333, 0xcccc, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	
 	// adjacent swaps
-	dv1_swap = SWAP32(dv1);
-	dv2_swap = SWAP32(dv2);
-	dv3_swap = SWAP32(dv3);
-	dv4_swap = SWAP32(dv4);
-	dv5_swap = SWAP32(dv5);
-	dv6_swap = SWAP32(dv6);
-	dv7_swap = SWAP32(dv7);
-	dv8_swap = SWAP32(dv8);
-
-	// 'AA' for the swap between adjacent lanes
-	//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	//BLENDMASK(0xAAAA, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	MINMAX(0xAAAA, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 	
-	dv1_swap = SWAP32(dv9);
-	dv2_swap = SWAP32(dv10);
-	dv3_swap = SWAP32(dv11);
-	dv4_swap = SWAP32(dv12);
-	dv5_swap = SWAP32(dv13);
-	dv6_swap = SWAP32(dv14);
-	dv7_swap = SWAP32(dv15);
-	dv8_swap = SWAP32(dv16);
-	
-	//CMPLT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-	//BLENDMASK(0xaaaa, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	SWAP32x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	MINMAX(0x5555, 0xAAAA, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	
 
@@ -2575,115 +1788,31 @@ void bitonic_sort32_dir_256(uint32_t* data, int dir)
 		dv15 = t4;
 		
 		// distance 8 swaps - 256 bits
-		dv1_swap = SWAP256(dv1);
-		dv2_swap = SWAP256(dv2);
-		dv3_swap = SWAP256(dv3);
-		dv4_swap = SWAP256(dv4);
-		dv5_swap = SWAP256(dv5);
-		dv6_swap = SWAP256(dv6);
-		dv7_swap = SWAP256(dv7);
-		dv8_swap = SWAP256(dv8);
-
-		// 'FF00' for the swap between dist-8 lanes
-		//CMPLT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0x00ff, 0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
-		dv1_swap = SWAP256(dv9);
-		dv2_swap = SWAP256(dv10);
-		dv3_swap = SWAP256(dv11);
-		dv4_swap = SWAP256(dv12);
-		dv5_swap = SWAP256(dv13);
-		dv6_swap = SWAP256(dv14);
-		dv7_swap = SWAP256(dv15);
-		dv8_swap = SWAP256(dv16);
-		
-		//CMPLT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-		//BLENDMASK(0xff00, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		SWAP256x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 		MINMAX(0x00ff, 0xFF00, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 		
 		// distance 4 swaps
-		dv1_swap = SWAP128(dv1);
-		dv2_swap = SWAP128(dv2);
-		dv3_swap = SWAP128(dv3);
-		dv4_swap = SWAP128(dv4);
-		dv5_swap = SWAP128(dv5);
-		dv6_swap = SWAP128(dv6);
-		dv7_swap = SWAP128(dv7);
-		dv8_swap = SWAP128(dv8);
-
-		// 'F0' for the swap between dist-4 lanes, non alternating
-		//CMPLT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0x0f0f, 0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
-		dv1_swap = SWAP128(dv9);
-		dv2_swap = SWAP128(dv10);
-		dv3_swap = SWAP128(dv11);
-		dv4_swap = SWAP128(dv12);
-		dv5_swap = SWAP128(dv13);
-		dv6_swap = SWAP128(dv14);
-		dv7_swap = SWAP128(dv15);
-		dv8_swap = SWAP128(dv16);
-		
-		//CMPLT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-		//BLENDMASK(0xf0f0, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		SWAP128x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 		MINMAX(0x0f0f, 0xF0F0, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 		
 		// distance 2 swaps
-		dv1_swap = SWAP64(dv1);
-		dv2_swap = SWAP64(dv2);
-		dv3_swap = SWAP64(dv3);
-		dv4_swap = SWAP64(dv4);
-		dv5_swap = SWAP64(dv5);
-		dv6_swap = SWAP64(dv6);
-		dv7_swap = SWAP64(dv7);
-		dv8_swap = SWAP64(dv8);
-
-		// 'CC' for the swap between dist-2 lanes, non alternating
-		//CMPLT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0x3333, 0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
-		dv1_swap = SWAP64(dv9);
-		dv2_swap = SWAP64(dv10);
-		dv3_swap = SWAP64(dv11);
-		dv4_swap = SWAP64(dv12);
-		dv5_swap = SWAP64(dv13);
-		dv6_swap = SWAP64(dv14);
-		dv7_swap = SWAP64(dv15);
-		dv8_swap = SWAP64(dv16);
-		
-		//CMPLT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-		//BLENDMASK(0xcccc, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		SWAP64x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 		MINMAX(0x3333, 0xCCCC, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 		
 		// adjacent swaps
-		dv1_swap = SWAP32(dv1);
-		dv2_swap = SWAP32(dv2);
-		dv3_swap = SWAP32(dv3);
-		dv4_swap = SWAP32(dv4);
-		dv5_swap = SWAP32(dv5);
-		dv6_swap = SWAP32(dv6);
-		dv7_swap = SWAP32(dv7);
-		dv8_swap = SWAP32(dv8);
-
-		// 'AA' for the swap between adjacent lanes
-		//CMPLT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xAAAA, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0x5555, 0xaaaa, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
-		dv1_swap = SWAP32(dv9);
-		dv2_swap = SWAP32(dv10);
-		dv3_swap = SWAP32(dv11);
-		dv4_swap = SWAP32(dv12);
-		dv5_swap = SWAP32(dv13);
-		dv6_swap = SWAP32(dv14);
-		dv7_swap = SWAP32(dv15);
-		dv8_swap = SWAP32(dv16);
-		
-		//CMPLT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-		//BLENDMASK(0xaaaa, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		SWAP32x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 		MINMAX(0x5555, 0xaaaa, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 	}
 	else
@@ -2798,115 +1927,31 @@ void bitonic_sort32_dir_256(uint32_t* data, int dir)
 		dv15 = t4;
 		
 		// distance 8 swaps - 256 bits
-		dv1_swap = SWAP256(dv1);
-		dv2_swap = SWAP256(dv2);
-		dv3_swap = SWAP256(dv3);
-		dv4_swap = SWAP256(dv4);
-		dv5_swap = SWAP256(dv5);
-		dv6_swap = SWAP256(dv6);
-		dv7_swap = SWAP256(dv7);
-		dv8_swap = SWAP256(dv8);
-
-		// '00FF' for the swap between dist-8 lanes
-		//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
-		dv1_swap = SWAP256(dv9);
-		dv2_swap = SWAP256(dv10);
-		dv3_swap = SWAP256(dv11);
-		dv4_swap = SWAP256(dv12);
-		dv5_swap = SWAP256(dv13);
-		dv6_swap = SWAP256(dv14);
-		dv7_swap = SWAP256(dv15);
-		dv8_swap = SWAP256(dv16);
-		
-		//CMPGT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-		//BLENDMASK(0xff00, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		SWAP256x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 		MINMAX(0xFF00, 0x00ff, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 		
 		// distance 4 swaps
-		dv1_swap = SWAP128(dv1);
-		dv2_swap = SWAP128(dv2);
-		dv3_swap = SWAP128(dv3);
-		dv4_swap = SWAP128(dv4);
-		dv5_swap = SWAP128(dv5);
-		dv6_swap = SWAP128(dv6);
-		dv7_swap = SWAP128(dv7);
-		dv8_swap = SWAP128(dv8);
-
-		// '0F' for the swap between dist-4 lanes, non alternating
-		//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0xf0f0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
-		dv1_swap = SWAP128(dv9);
-		dv2_swap = SWAP128(dv10);
-		dv3_swap = SWAP128(dv11);
-		dv4_swap = SWAP128(dv12);
-		dv5_swap = SWAP128(dv13);
-		dv6_swap = SWAP128(dv14);
-		dv7_swap = SWAP128(dv15);
-		dv8_swap = SWAP128(dv16);
-		
-		//CMPGT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-		//BLENDMASK(0xf0f0, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		SWAP128x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 		MINMAX(0xf0f0, 0x0f0f, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 
 		// distance 2 swaps
-		dv1_swap = SWAP64(dv1);
-		dv2_swap = SWAP64(dv2);
-		dv3_swap = SWAP64(dv3);
-		dv4_swap = SWAP64(dv4);
-		dv5_swap = SWAP64(dv5);
-		dv6_swap = SWAP64(dv6);
-		dv7_swap = SWAP64(dv7);
-		dv8_swap = SWAP64(dv8);
-
-		// 'CC' for the swap between dist-2 lanes, non alternating
-		//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
-		dv1_swap = SWAP64(dv9);
-		dv2_swap = SWAP64(dv10);
-		dv3_swap = SWAP64(dv11);
-		dv4_swap = SWAP64(dv12);
-		dv5_swap = SWAP64(dv13);
-		dv6_swap = SWAP64(dv14);
-		dv7_swap = SWAP64(dv15);
-		dv8_swap = SWAP64(dv16);
-		
-		//CMPGT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-		//BLENDMASK(0xcccc, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		SWAP64x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 		MINMAX(0xCCCC, 0x3333, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 		
 		// adjacent swaps
-		dv1_swap = SWAP32(dv1);
-		dv2_swap = SWAP32(dv2);
-		dv3_swap = SWAP32(dv3);
-		dv4_swap = SWAP32(dv4);
-		dv5_swap = SWAP32(dv5);
-		dv6_swap = SWAP32(dv6);
-		dv7_swap = SWAP32(dv7);
-		dv8_swap = SWAP32(dv8);
-
-		// 'AA' for the swap between adjacent lanes
-		//CMPGT(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		//BLENDMASK(0xAAAA, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		MINMAX(0xaaaa, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
-		dv1_swap = SWAP32(dv9);
-		dv2_swap = SWAP32(dv10);
-		dv3_swap = SWAP32(dv11);
-		dv4_swap = SWAP32(dv12);
-		dv5_swap = SWAP32(dv13);
-		dv6_swap = SWAP32(dv14);
-		dv7_swap = SWAP32(dv15);
-		dv8_swap = SWAP32(dv16);
-		
-		//CMPGT(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
-		//BLENDMASK(0xaaaa, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		SWAP32x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 		MINMAX(0xaaaa, 0x5555, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
 
 	}
@@ -5289,7 +4334,7 @@ done:
 	return 0;
 }
 
-int main(int argc, char ** argv)
+int main2(int argc, char ** argv)
 {
 	uint32 i, j, n;
 	uint32 num_sort;
@@ -5426,7 +4471,7 @@ done:
 	return 0;
 }
 
-int main2(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
 	uint32 i, j, n;
 	uint32 num_sort;
