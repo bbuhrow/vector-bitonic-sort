@@ -27,24 +27,22 @@ The base-case functions and their performance relative to qsort are:
 * bitonic_sort64_128: sort 128 8-byte integers (1024 bytes) in tbd nanoseconds (tbd faster than qsort)
 
 Other functions:
-bitonic_sort(): a recursive function for sorting higher-powers-of-2-sized arrays
-sort()        : a function for sorting arbitrary sized arrays
-parsort()     : a function for parallel sorting of higher-powers-of-2-sized arrays using openMP
+* bitonic_sort(): a recursive function for sorting higher-powers-of-2-sized arrays
+* sort()        : a function for sorting arbitrary sized arrays
+* parsort()     : a function for parallel sorting of higher-powers-of-2-sized arrays using openMP
    
 None of the sort routines detect or care about how the input data is distributed.  Random
 or already sorted, the speed will be the same.  Here are a few benchmarks of longer lists:
 
-length-32k arrays of 64-bit integers  in about 219 microseconds		(11x faster than qsort)
-length-1M arrays of 64-bit integers  in about 12.5 milliseconds		(8x faster than qsort)
-length-32k arrays of 32-bit integers  in about 97 microseconds		(25x faster than qsort)
-length-1M arrays of 32-bit integers  in about 5.7 milliseconds		(18x faster than qsort)
+* length-32k arrays of 64-bit integers  in about 219 microseconds		(11x faster than qsort)
+* length-1M arrays of 64-bit integers  in about 12.5 milliseconds		(8x faster than qsort)
+* length-32k arrays of 32-bit integers  in about 97 microseconds		(25x faster than qsort)
+* length-1M arrays of 32-bit integers  in about 5.7 milliseconds		(18x faster than qsort)
 
 All benchmarks were run on an AMD Epyc 9174F processor.
 
 pure C build, for example:
 clang -O2 -g -march=icelake-client -fopenmp vec_bitonic_sort.c -o vecsort
-gcc -O2 -g -march=icelake-client -fopenmp vec_bitonic_sort.c -o vecsort
-icc -O2 -g -march=icelake-client -fopenmp vec_bitonic_sort.c -o vecsort
 
 Future plans (in progress):
 * sorts for 16-bit integer arrays
