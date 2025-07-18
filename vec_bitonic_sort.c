@@ -210,6 +210,17 @@ uint32_t my_clz32(uint64_t n)
 #endif
 }
 
+uint32_t next_power_2(uint32_t sz)
+{
+	uint32_t new_sz = my_clz32(sz);
+	if (new_sz == 0)
+	{
+		printf("buffer too big, sz must be <= 2^31 in sort()\n");
+		exit(0);
+	}
+	return (1 << (32 - new_sz));
+}
+
 // intrinsics for swapping N-bit chunks of data within a 512-bit vector
 // that use immediates (faster and fewer registers than needing to load index vectors)
 #define SWAP32(x) _mm512_shuffle_epi32((x), 0xB1)
@@ -603,359 +614,125 @@ void bitonic_merge32_dir_128(uint32_t* data, int dir)
 
 	if (dir == 1)
 	{
-		// distance 64 swaps - just compare the vecs
-		m1 = _mm512_cmplt_epu32_mask(dv1, dv5);
-		m2 = _mm512_cmplt_epu32_mask(dv2, dv6);
-		m3 = _mm512_cmplt_epu32_mask(dv3, dv7);
-		m4 = _mm512_cmplt_epu32_mask(dv4, dv8);
-
-		t1 = _mm512_mask_blend_epi32(m1, dv1, dv5);
-		t2 = _mm512_mask_blend_epi32(m2, dv2, dv6);
-		t3 = _mm512_mask_blend_epi32(m3, dv3, dv7);
-		t4 = _mm512_mask_blend_epi32(m4, dv4, dv8);
-		dv5 = _mm512_mask_blend_epi32(m1, dv5, dv1);
-		dv6 = _mm512_mask_blend_epi32(m2, dv6, dv2);
-		dv7 = _mm512_mask_blend_epi32(m3, dv7, dv3);
-		dv8 = _mm512_mask_blend_epi32(m4, dv8, dv4);
+		// dist-64 swaps
+		t1 =  _mm512_max_epu32(dv1, dv5);
+		t2 =  _mm512_max_epu32(dv2, dv6);
+		t3 =  _mm512_max_epu32(dv3, dv7);
+		t4 =  _mm512_max_epu32(dv4, dv8);
+		dv5 = _mm512_min_epu32(dv1, dv5);
+		dv6 = _mm512_min_epu32(dv2, dv6);
+		dv7 = _mm512_min_epu32(dv3, dv7);
+		dv8 = _mm512_min_epu32(dv4, dv8);
 		dv1 = t1;
 		dv2 = t2;
 		dv3 = t3;
 		dv4 = t4;
 		
 		// distance 32 swaps - just compare the vecs
-		m1 = _mm512_cmplt_epu32_mask(dv1, dv3);
-		m2 = _mm512_cmplt_epu32_mask(dv2, dv4);
-		m3 = _mm512_cmplt_epu32_mask(dv5, dv7);
-		m4 = _mm512_cmplt_epu32_mask(dv6, dv8);
-
-		t1 = _mm512_mask_blend_epi32(m1, dv1, dv3);
-		t2 = _mm512_mask_blend_epi32(m2, dv2, dv4);
-		t3 = _mm512_mask_blend_epi32(m3, dv5, dv7);
-		t4 = _mm512_mask_blend_epi32(m4, dv6, dv8);
-			
-		dv3 = _mm512_mask_blend_epi32(m1, dv3, dv1);
-		dv4 = _mm512_mask_blend_epi32(m2, dv4, dv2);
-		dv7 = _mm512_mask_blend_epi32(m3, dv7, dv5);
-		dv8 = _mm512_mask_blend_epi32(m4, dv8, dv6);
+		t1 =  _mm512_max_epu32(dv1, dv3);
+		t2 =  _mm512_max_epu32(dv2, dv4);
+		t3 =  _mm512_max_epu32(dv5, dv7);
+		t4 =  _mm512_max_epu32(dv6, dv8);
+		dv3 = _mm512_min_epu32(dv1, dv3);
+		dv4 = _mm512_min_epu32(dv2, dv4);
+		dv7 = _mm512_min_epu32(dv5, dv7);
+		dv8 = _mm512_min_epu32(dv6, dv8);
 		dv1 = t1;
 		dv2 = t2;
 		dv5 = t3;
 		dv6 = t4;
-		
-		// distance 16 swaps - just compare the vecs
-		m1 = _mm512_cmplt_epu32_mask(dv1, dv2);
-		m2 = _mm512_cmplt_epu32_mask(dv3, dv4);
-		m3 = _mm512_cmplt_epu32_mask(dv5, dv6);
-		m4 = _mm512_cmplt_epu32_mask(dv7, dv8);
 
-		t1 = _mm512_mask_blend_epi32(m1, dv1, dv2);
-		t2 = _mm512_mask_blend_epi32(m2, dv3, dv4);
-		t3 = _mm512_mask_blend_epi32(m3, dv5, dv6);
-		t4 = _mm512_mask_blend_epi32(m4, dv7, dv8);
-			
-		dv2 = _mm512_mask_blend_epi32(m1, dv2, dv1);
-		dv4 = _mm512_mask_blend_epi32(m2, dv4, dv3);
-		dv6 = _mm512_mask_blend_epi32(m3, dv6, dv5);
-		dv8 = _mm512_mask_blend_epi32(m4, dv8, dv7);
+		// distance 16 swaps - just compare the vecs
+		t1 =  _mm512_max_epu32(dv1, dv2);
+		t2 =  _mm512_max_epu32(dv3, dv4);
+		t3 =  _mm512_max_epu32(dv5, dv6);
+		t4 =  _mm512_max_epu32(dv7, dv8);
+		dv2 = _mm512_min_epu32(dv1, dv2);
+		dv4 = _mm512_min_epu32(dv3, dv4);
+		dv6 = _mm512_min_epu32(dv5, dv6);
+		dv8 = _mm512_min_epu32(dv7, dv8);
 		dv1 = t1;
 		dv3 = t2;
 		dv5 = t3;
 		dv7 = t4;
-
+		
 		// distance 8 swaps - 256 bits
-		dv1_swap = SWAP256(dv1);
-		dv2_swap = SWAP256(dv2);
-		dv3_swap = SWAP256(dv3);
-		dv4_swap = SWAP256(dv4);
-		dv5_swap = SWAP256(dv5);
-		dv6_swap = SWAP256(dv6);
-		dv7_swap = SWAP256(dv7);
-		dv8_swap = SWAP256(dv8);
+		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0x00ff, 0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
-		m1 = _mm512_cmplt_epu32_mask(dv1, dv1_swap);
-		m2 = _mm512_cmplt_epu32_mask(dv2, dv2_swap);
-		m3 = _mm512_cmplt_epu32_mask(dv3, dv3_swap);
-		m4 = _mm512_cmplt_epu32_mask(dv4, dv4_swap);
-		m5 = _mm512_cmplt_epu32_mask(dv5, dv5_swap);
-		m6 = _mm512_cmplt_epu32_mask(dv6, dv6_swap);
-		m7 = _mm512_cmplt_epu32_mask(dv7, dv7_swap);
-		m8 = _mm512_cmplt_epu32_mask(dv8, dv8_swap);
-
-		// 'FF00' for the swap between dist-8 lanes
-		dv1 = _mm512_mask_blend_epi32(m1 ^ 0xFF00, dv1, dv1_swap);
-		dv2 = _mm512_mask_blend_epi32(m2 ^ 0xFF00, dv2, dv2_swap);
-		dv3 = _mm512_mask_blend_epi32(m3 ^ 0xFF00, dv3, dv3_swap);
-		dv4 = _mm512_mask_blend_epi32(m4 ^ 0xFF00, dv4, dv4_swap);
-		dv5 = _mm512_mask_blend_epi32(m5 ^ 0xFF00, dv5, dv5_swap);
-		dv6 = _mm512_mask_blend_epi32(m6 ^ 0xFF00, dv6, dv6_swap);
-		dv7 = _mm512_mask_blend_epi32(m7 ^ 0xFF00, dv7, dv7_swap);
-		dv8 = _mm512_mask_blend_epi32(m8 ^ 0xFF00, dv8, dv8_swap);
-
 		// distance 4 swaps
-		dv1_swap = SWAP128(dv1);
-		dv2_swap = SWAP128(dv2);
-		dv3_swap = SWAP128(dv3);
-		dv4_swap = SWAP128(dv4);
-		dv5_swap = SWAP128(dv5);
-		dv6_swap = SWAP128(dv6);
-		dv7_swap = SWAP128(dv7);
-		dv8_swap = SWAP128(dv8);
+		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0x0f0f, 0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
-		m1 = _mm512_cmplt_epu32_mask(dv1, dv1_swap);
-		m2 = _mm512_cmplt_epu32_mask(dv2, dv2_swap);
-		m3 = _mm512_cmplt_epu32_mask(dv3, dv3_swap);
-		m4 = _mm512_cmplt_epu32_mask(dv4, dv4_swap);
-		m5 = _mm512_cmplt_epu32_mask(dv5, dv5_swap);
-		m6 = _mm512_cmplt_epu32_mask(dv6, dv6_swap);
-		m7 = _mm512_cmplt_epu32_mask(dv7, dv7_swap);
-		m8 = _mm512_cmplt_epu32_mask(dv8, dv8_swap);
-
-		// 'F0' for the swap between dist-4 lanes, non alternating
-		dv1 = _mm512_mask_blend_epi32(m1 ^ 0xF0F0, dv1, dv1_swap);
-		dv2 = _mm512_mask_blend_epi32(m2 ^ 0xF0F0, dv2, dv2_swap);
-		dv3 = _mm512_mask_blend_epi32(m3 ^ 0xF0F0, dv3, dv3_swap);
-		dv4 = _mm512_mask_blend_epi32(m4 ^ 0xF0F0, dv4, dv4_swap);
-		dv5 = _mm512_mask_blend_epi32(m5 ^ 0xF0F0, dv5, dv5_swap);
-		dv6 = _mm512_mask_blend_epi32(m6 ^ 0xF0F0, dv6, dv6_swap);
-		dv7 = _mm512_mask_blend_epi32(m7 ^ 0xF0F0, dv7, dv7_swap);
-		dv8 = _mm512_mask_blend_epi32(m8 ^ 0xF0F0, dv8, dv8_swap);
-
 		// distance 2 swaps
-		dv1_swap = SWAP64(dv1);
-		dv2_swap = SWAP64(dv2);
-		dv3_swap = SWAP64(dv3);
-		dv4_swap = SWAP64(dv4);
-		dv5_swap = SWAP64(dv5);
-		dv6_swap = SWAP64(dv6);
-		dv7_swap = SWAP64(dv7);
-		dv8_swap = SWAP64(dv8);
+		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0x3333, 0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
-		m1 = _mm512_cmplt_epu32_mask(dv1, dv1_swap);
-		m2 = _mm512_cmplt_epu32_mask(dv2, dv2_swap);
-		m3 = _mm512_cmplt_epu32_mask(dv3, dv3_swap);
-		m4 = _mm512_cmplt_epu32_mask(dv4, dv4_swap);
-		m5 = _mm512_cmplt_epu32_mask(dv5, dv5_swap);
-		m6 = _mm512_cmplt_epu32_mask(dv6, dv6_swap);
-		m7 = _mm512_cmplt_epu32_mask(dv7, dv7_swap);
-		m8 = _mm512_cmplt_epu32_mask(dv8, dv8_swap);
-
-		// 'CC' for the swap between dist-2 lanes, non alternating
-		dv1 = _mm512_mask_blend_epi32(m1 ^ 0xCCCC, dv1, dv1_swap);
-		dv2 = _mm512_mask_blend_epi32(m2 ^ 0xCCCC, dv2, dv2_swap);
-		dv3 = _mm512_mask_blend_epi32(m3 ^ 0xCCCC, dv3, dv3_swap);
-		dv4 = _mm512_mask_blend_epi32(m4 ^ 0xCCCC, dv4, dv4_swap);
-		dv5 = _mm512_mask_blend_epi32(m5 ^ 0xCCCC, dv5, dv5_swap);
-		dv6 = _mm512_mask_blend_epi32(m6 ^ 0xCCCC, dv6, dv6_swap);
-		dv7 = _mm512_mask_blend_epi32(m7 ^ 0xCCCC, dv7, dv7_swap);
-		dv8 = _mm512_mask_blend_epi32(m8 ^ 0xCCCC, dv8, dv8_swap);
-
 		// adjacent swaps
-		dv1_swap = SWAP32(dv1);
-		dv2_swap = SWAP32(dv2);
-		dv3_swap = SWAP32(dv3);
-		dv4_swap = SWAP32(dv4);
-		dv5_swap = SWAP32(dv5);
-		dv6_swap = SWAP32(dv6);
-		dv7_swap = SWAP32(dv7);
-		dv8_swap = SWAP32(dv8);
-		
-		m1 = _mm512_cmplt_epu32_mask(dv1, dv1_swap);
-		m2 = _mm512_cmplt_epu32_mask(dv2, dv2_swap);
-		m3 = _mm512_cmplt_epu32_mask(dv3, dv3_swap);
-		m4 = _mm512_cmplt_epu32_mask(dv4, dv4_swap);
-		m5 = _mm512_cmplt_epu32_mask(dv5, dv5_swap);
-		m6 = _mm512_cmplt_epu32_mask(dv6, dv6_swap);
-		m7 = _mm512_cmplt_epu32_mask(dv7, dv7_swap);
-		m8 = _mm512_cmplt_epu32_mask(dv8, dv8_swap);
-
-		// 'AA' for the swap between adjacent lanes
-		dv1 = _mm512_mask_blend_epi32(m1 ^ 0xAAAA, dv1, dv1_swap);
-		dv2 = _mm512_mask_blend_epi32(m2 ^ 0xAAAA, dv2, dv2_swap);
-		dv3 = _mm512_mask_blend_epi32(m3 ^ 0xAAAA, dv3, dv3_swap);
-		dv4 = _mm512_mask_blend_epi32(m4 ^ 0xAAAA, dv4, dv4_swap);
-		dv5 = _mm512_mask_blend_epi32(m5 ^ 0xAAAA, dv5, dv5_swap);
-		dv6 = _mm512_mask_blend_epi32(m6 ^ 0xAAAA, dv6, dv6_swap);
-		dv7 = _mm512_mask_blend_epi32(m7 ^ 0xAAAA, dv7, dv7_swap);
-		dv8 = _mm512_mask_blend_epi32(m8 ^ 0xAAAA, dv8, dv8_swap);
+		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0x5555, 0xaaaa, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 	}
 	else
-	{
-
-		// distance 64 swaps - just compare the vecs
-		m1 = _mm512_cmpgt_epu32_mask(dv1, dv5);
-		m2 = _mm512_cmpgt_epu32_mask(dv2, dv6);
-		m3 = _mm512_cmpgt_epu32_mask(dv3, dv7);
-		m4 = _mm512_cmpgt_epu32_mask(dv4, dv8);
-
-		t1 = _mm512_mask_blend_epi32(m1, dv1, dv5);
-		t2 = _mm512_mask_blend_epi32(m2, dv2, dv6);
-		t3 = _mm512_mask_blend_epi32(m3, dv3, dv7);
-		t4 = _mm512_mask_blend_epi32(m4, dv4, dv8);
-		dv5 = _mm512_mask_blend_epi32(m1, dv5, dv1);
-		dv6 = _mm512_mask_blend_epi32(m2, dv6, dv2);
-		dv7 = _mm512_mask_blend_epi32(m3, dv7, dv3);
-		dv8 = _mm512_mask_blend_epi32(m4, dv8, dv4);
+	{	
+		// dist-64 swaps
+		t1 =  _mm512_min_epu32(dv1, dv5);
+		t2 =  _mm512_min_epu32(dv2, dv6);
+		t3 =  _mm512_min_epu32(dv3, dv7);
+		t4 =  _mm512_min_epu32(dv4, dv8);
+		dv5 = _mm512_max_epu32(dv1, dv5);
+		dv6 = _mm512_max_epu32(dv2, dv6);
+		dv7 = _mm512_max_epu32(dv3, dv7);
+		dv8 = _mm512_max_epu32(dv4, dv8);
 		dv1 = t1;
 		dv2 = t2;
 		dv3 = t3;
 		dv4 = t4;
 		
 		// distance 32 swaps - just compare the vecs
-		m1 = _mm512_cmpgt_epu32_mask(dv1, dv3);
-		m2 = _mm512_cmpgt_epu32_mask(dv2, dv4);
-		m3 = _mm512_cmpgt_epu32_mask(dv5, dv7);
-		m4 = _mm512_cmpgt_epu32_mask(dv6, dv8);
-
-		t1 = _mm512_mask_blend_epi32(m1, dv1, dv3);
-		t2 = _mm512_mask_blend_epi32(m2, dv2, dv4);
-		t3 = _mm512_mask_blend_epi32(m3, dv5, dv7);
-		t4 = _mm512_mask_blend_epi32(m4, dv6, dv8);
-			
-		dv3 = _mm512_mask_blend_epi32(m1, dv3, dv1);
-		dv4 = _mm512_mask_blend_epi32(m2, dv4, dv2);
-		dv7 = _mm512_mask_blend_epi32(m3, dv7, dv5);
-		dv8 = _mm512_mask_blend_epi32(m4, dv8, dv6);
+		t1 =  _mm512_min_epu32(dv1, dv3);
+		t2 =  _mm512_min_epu32(dv2, dv4);
+		t3 =  _mm512_min_epu32(dv5, dv7);
+		t4 =  _mm512_min_epu32(dv6, dv8);
+		dv3 = _mm512_max_epu32(dv1, dv3);
+		dv4 = _mm512_max_epu32(dv2, dv4);
+		dv7 = _mm512_max_epu32(dv5, dv7);
+		dv8 = _mm512_max_epu32(dv6, dv8);
 		dv1 = t1;
 		dv2 = t2;
 		dv5 = t3;
 		dv6 = t4;
-		
-		// distance 16 swaps - just compare the vecs
-		m1 = _mm512_cmpgt_epu32_mask(dv1, dv2);
-		m2 = _mm512_cmpgt_epu32_mask(dv3, dv4);
-		m3 = _mm512_cmpgt_epu32_mask(dv5, dv6);
-		m4 = _mm512_cmpgt_epu32_mask(dv7, dv8);
 
-		t1 = _mm512_mask_blend_epi32(m1, dv1, dv2);
-		t2 = _mm512_mask_blend_epi32(m2, dv3, dv4);
-		t3 = _mm512_mask_blend_epi32(m3, dv5, dv6);
-		t4 = _mm512_mask_blend_epi32(m4, dv7, dv8);
-			
-		dv2 = _mm512_mask_blend_epi32(m1, dv2, dv1);
-		dv4 = _mm512_mask_blend_epi32(m2, dv4, dv3);
-		dv6 = _mm512_mask_blend_epi32(m3, dv6, dv5);
-		dv8 = _mm512_mask_blend_epi32(m4, dv8, dv7);
+		// distance 16 swaps - just compare the vecs
+		t1 =  _mm512_min_epu32(dv1, dv2);
+		t2 =  _mm512_min_epu32(dv3, dv4);
+		t3 =  _mm512_min_epu32(dv5, dv6);
+		t4 =  _mm512_min_epu32(dv7, dv8);
+		dv2 = _mm512_max_epu32(dv1, dv2);
+		dv4 = _mm512_max_epu32(dv3, dv4);
+		dv6 = _mm512_max_epu32(dv5, dv6);
+		dv8 = _mm512_max_epu32(dv7, dv8);
 		dv1 = t1;
 		dv3 = t2;
 		dv5 = t3;
 		dv7 = t4;
 
 		// distance 8 swaps - 256 bits
-		dv1_swap = SWAP256(dv1);
-		dv2_swap = SWAP256(dv2);
-		dv3_swap = SWAP256(dv3);
-		dv4_swap = SWAP256(dv4);
-		dv5_swap = SWAP256(dv5);
-		dv6_swap = SWAP256(dv6);
-		dv7_swap = SWAP256(dv7);
-		dv8_swap = SWAP256(dv8);
+		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
-		m1 = _mm512_cmpgt_epu32_mask(dv1, dv1_swap);
-		m2 = _mm512_cmpgt_epu32_mask(dv2, dv2_swap);
-		m3 = _mm512_cmpgt_epu32_mask(dv3, dv3_swap);
-		m4 = _mm512_cmpgt_epu32_mask(dv4, dv4_swap);
-		m5 = _mm512_cmpgt_epu32_mask(dv5, dv5_swap);
-		m6 = _mm512_cmpgt_epu32_mask(dv6, dv6_swap);
-		m7 = _mm512_cmpgt_epu32_mask(dv7, dv7_swap);
-		m8 = _mm512_cmpgt_epu32_mask(dv8, dv8_swap);
-
-		// 'FF00' for the swap between dist-8 lanes
-		dv1 = _mm512_mask_blend_epi32(m1 ^ 0xFF00, dv1, dv1_swap);
-		dv2 = _mm512_mask_blend_epi32(m2 ^ 0xFF00, dv2, dv2_swap);
-		dv3 = _mm512_mask_blend_epi32(m3 ^ 0xFF00, dv3, dv3_swap);
-		dv4 = _mm512_mask_blend_epi32(m4 ^ 0xFF00, dv4, dv4_swap);
-		dv5 = _mm512_mask_blend_epi32(m5 ^ 0xFF00, dv5, dv5_swap);
-		dv6 = _mm512_mask_blend_epi32(m6 ^ 0xFF00, dv6, dv6_swap);
-		dv7 = _mm512_mask_blend_epi32(m7 ^ 0xFF00, dv7, dv7_swap);
-		dv8 = _mm512_mask_blend_epi32(m8 ^ 0xFF00, dv8, dv8_swap);
-
 		// distance 4 swaps
-		dv1_swap = SWAP128(dv1);
-		dv2_swap = SWAP128(dv2);
-		dv3_swap = SWAP128(dv3);
-		dv4_swap = SWAP128(dv4);
-		dv5_swap = SWAP128(dv5);
-		dv6_swap = SWAP128(dv6);
-		dv7_swap = SWAP128(dv7);
-		dv8_swap = SWAP128(dv8);
-		
-		m1 = _mm512_cmpgt_epu32_mask(dv1, dv1_swap);
-		m2 = _mm512_cmpgt_epu32_mask(dv2, dv2_swap);
-		m3 = _mm512_cmpgt_epu32_mask(dv3, dv3_swap);
-		m4 = _mm512_cmpgt_epu32_mask(dv4, dv4_swap);
-		m5 = _mm512_cmpgt_epu32_mask(dv5, dv5_swap);
-		m6 = _mm512_cmpgt_epu32_mask(dv6, dv6_swap);
-		m7 = _mm512_cmpgt_epu32_mask(dv7, dv7_swap);
-		m8 = _mm512_cmpgt_epu32_mask(dv8, dv8_swap);
-
-		// 'F0' for the swap between dist-4 lanes, non alternating
-		dv1 = _mm512_mask_blend_epi32(m1 ^ 0xF0F0, dv1, dv1_swap);
-		dv2 = _mm512_mask_blend_epi32(m2 ^ 0xF0F0, dv2, dv2_swap);
-		dv3 = _mm512_mask_blend_epi32(m3 ^ 0xF0F0, dv3, dv3_swap);
-		dv4 = _mm512_mask_blend_epi32(m4 ^ 0xF0F0, dv4, dv4_swap);
-		dv5 = _mm512_mask_blend_epi32(m5 ^ 0xF0F0, dv5, dv5_swap);
-		dv6 = _mm512_mask_blend_epi32(m6 ^ 0xF0F0, dv6, dv6_swap);
-		dv7 = _mm512_mask_blend_epi32(m7 ^ 0xF0F0, dv7, dv7_swap);
-		dv8 = _mm512_mask_blend_epi32(m8 ^ 0xF0F0, dv8, dv8_swap);
+		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0xf0f0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
 		// distance 2 swaps
-		dv1_swap = SWAP64(dv1);
-		dv2_swap = SWAP64(dv2);
-		dv3_swap = SWAP64(dv3);
-		dv4_swap = SWAP64(dv4);
-		dv5_swap = SWAP64(dv5);
-		dv6_swap = SWAP64(dv6);
-		dv7_swap = SWAP64(dv7);
-		dv8_swap = SWAP64(dv8);
+		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 		
-		m1 = _mm512_cmpgt_epu32_mask(dv1, dv1_swap);
-		m2 = _mm512_cmpgt_epu32_mask(dv2, dv2_swap);
-		m3 = _mm512_cmpgt_epu32_mask(dv3, dv3_swap);
-		m4 = _mm512_cmpgt_epu32_mask(dv4, dv4_swap);
-		m5 = _mm512_cmpgt_epu32_mask(dv5, dv5_swap);
-		m6 = _mm512_cmpgt_epu32_mask(dv6, dv6_swap);
-		m7 = _mm512_cmpgt_epu32_mask(dv7, dv7_swap);
-		m8 = _mm512_cmpgt_epu32_mask(dv8, dv8_swap);
-
-		// 'CC' for the swap between dist-2 lanes, non alternating
-		dv1 = _mm512_mask_blend_epi32(m1 ^ 0xCCCC, dv1, dv1_swap);
-		dv2 = _mm512_mask_blend_epi32(m2 ^ 0xCCCC, dv2, dv2_swap);
-		dv3 = _mm512_mask_blend_epi32(m3 ^ 0xCCCC, dv3, dv3_swap);
-		dv4 = _mm512_mask_blend_epi32(m4 ^ 0xCCCC, dv4, dv4_swap);
-		dv5 = _mm512_mask_blend_epi32(m5 ^ 0xCCCC, dv5, dv5_swap);
-		dv6 = _mm512_mask_blend_epi32(m6 ^ 0xCCCC, dv6, dv6_swap);
-		dv7 = _mm512_mask_blend_epi32(m7 ^ 0xCCCC, dv7, dv7_swap);
-		dv8 = _mm512_mask_blend_epi32(m8 ^ 0xCCCC, dv8, dv8_swap);
-
 		// adjacent swaps
-		dv1_swap = SWAP32(dv1);
-		dv2_swap = SWAP32(dv2);
-		dv3_swap = SWAP32(dv3);
-		dv4_swap = SWAP32(dv4);
-		dv5_swap = SWAP32(dv5);
-		dv6_swap = SWAP32(dv6);
-		dv7_swap = SWAP32(dv7);
-		dv8_swap = SWAP32(dv8);
-		
-		m1 = _mm512_cmpgt_epu32_mask(dv1, dv1_swap);
-		m2 = _mm512_cmpgt_epu32_mask(dv2, dv2_swap);
-		m3 = _mm512_cmpgt_epu32_mask(dv3, dv3_swap);
-		m4 = _mm512_cmpgt_epu32_mask(dv4, dv4_swap);
-		m5 = _mm512_cmpgt_epu32_mask(dv5, dv5_swap);
-		m6 = _mm512_cmpgt_epu32_mask(dv6, dv6_swap);
-		m7 = _mm512_cmpgt_epu32_mask(dv7, dv7_swap);
-		m8 = _mm512_cmpgt_epu32_mask(dv8, dv8_swap);
+		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0xaaaa, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
 
-		// 'AA' for the swap between adjacent lanes
-		dv1 = _mm512_mask_blend_epi32(m1 ^ 0xAAAA, dv1, dv1_swap);
-		dv2 = _mm512_mask_blend_epi32(m2 ^ 0xAAAA, dv2, dv2_swap);
-		dv3 = _mm512_mask_blend_epi32(m3 ^ 0xAAAA, dv3, dv3_swap);
-		dv4 = _mm512_mask_blend_epi32(m4 ^ 0xAAAA, dv4, dv4_swap);
-		dv5 = _mm512_mask_blend_epi32(m5 ^ 0xAAAA, dv5, dv5_swap);
-		dv6 = _mm512_mask_blend_epi32(m6 ^ 0xAAAA, dv6, dv6_swap);
-		dv7 = _mm512_mask_blend_epi32(m7 ^ 0xAAAA, dv7, dv7_swap);
-		dv8 = _mm512_mask_blend_epi32(m8 ^ 0xAAAA, dv8, dv8_swap);
 	}
 
 	_mm512_store_epi32(data, dv1);
@@ -967,6 +744,369 @@ void bitonic_merge32_dir_128(uint32_t* data, int dir)
 	_mm512_store_epi32(data + 96, dv7);
 	_mm512_store_epi32(data + 112, dv8);
 
+	return;
+}
+
+void bitonic_merge32_dir_256(uint32_t* data, int dir) 
+{
+	// perform the final merge phase on 128 32-bit elements
+	int i, j;
+
+	__m512i dv1;
+	__m512i dv2;
+	__m512i dv3;
+	__m512i dv4;
+	__m512i dv5;
+	__m512i dv6;
+	__m512i dv7;
+	__m512i dv8;
+	__m512i dv9;
+	__m512i dv10;
+	__m512i dv11;
+	__m512i dv12;
+	__m512i dv13;
+	__m512i dv14;
+	__m512i dv15;
+	__m512i dv16;
+	__m512i dv1_swap;
+	__m512i dv2_swap;
+	__m512i dv3_swap;
+	__m512i dv4_swap;
+	__m512i dv5_swap;
+	__m512i dv6_swap;
+	__m512i dv7_swap;
+	__m512i dv8_swap;
+	__m512i t1;
+	__m512i t2;
+	__m512i t3;
+	__m512i t4;
+	__m512i t5;
+	__m512i t6;
+	__m512i t7;
+	__m512i t8;
+	__mmask16 m1;
+	__mmask16 m2;
+	__mmask16 m3;
+	__mmask16 m4;
+	__mmask16 m5;
+	__mmask16 m6;
+	__mmask16 m7;
+	__mmask16 m8;
+
+	dv1 = _mm512_load_epi32(data);
+	dv2 = _mm512_load_epi32(data + 16);
+	dv3 = _mm512_load_epi32(data + 32);
+	dv4 = _mm512_load_epi32(data + 48);
+	dv5 = _mm512_load_epi32(data + 64);
+	dv6 = _mm512_load_epi32(data + 80);
+	dv7 = _mm512_load_epi32(data + 96);
+	dv8 = _mm512_load_epi32(data + 112);
+	dv9 = _mm512_load_epi32(data + 128);
+	dv10 = _mm512_load_epi32(data + 9 * 16);
+	dv11 = _mm512_load_epi32(data + 10 * 16);
+	dv12 = _mm512_load_epi32(data + 11 * 16);
+	dv13 = _mm512_load_epi32(data + 12 * 16);
+	dv14 = _mm512_load_epi32(data + 13 * 16);
+	dv15 = _mm512_load_epi32(data + 14 * 16);
+	dv16 = _mm512_load_epi32(data + 15 * 16);
+
+	if (dir == 1)
+	{
+		// distance 128 swaps - just compare the vecs
+		t1 =   _mm512_max_epu32(dv1, dv9 );
+		t2 =   _mm512_max_epu32(dv2, dv10);
+		t3 =   _mm512_max_epu32(dv3, dv11);
+		t4 =   _mm512_max_epu32(dv4, dv12);
+		dv9  = _mm512_min_epu32(dv1, dv9 );
+		dv10 = _mm512_min_epu32(dv2, dv10);
+		dv11 = _mm512_min_epu32(dv3, dv11);
+		dv12 = _mm512_min_epu32(dv4, dv12);
+		dv1 = t1;
+		dv2 = t2;
+		dv3 = t3;
+		dv4 = t4;
+
+		t1  =  _mm512_max_epu32(dv5, dv13);
+		t2  =  _mm512_max_epu32(dv6, dv14);
+		t3  =  _mm512_max_epu32(dv7, dv15);
+		t4  =  _mm512_max_epu32(dv8, dv16);
+		dv13 = _mm512_min_epu32(dv5, dv13);
+		dv14 = _mm512_min_epu32(dv6, dv14);
+		dv15 = _mm512_min_epu32(dv7, dv15);
+		dv16 = _mm512_min_epu32(dv8, dv16);
+		dv5 = t1;
+		dv6 = t2;
+		dv7 = t3;
+		dv8 = t4;
+		
+		// dist-64 swaps
+		t1 =  _mm512_max_epu32(dv1, dv5);
+		t2 =  _mm512_max_epu32(dv2, dv6);
+		t3 =  _mm512_max_epu32(dv3, dv7);
+		t4 =  _mm512_max_epu32(dv4, dv8);
+		dv5 = _mm512_min_epu32(dv1, dv5);
+		dv6 = _mm512_min_epu32(dv2, dv6);
+		dv7 = _mm512_min_epu32(dv3, dv7);
+		dv8 = _mm512_min_epu32(dv4, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv3 = t3;
+		dv4 = t4;
+
+		t1  =  _mm512_max_epu32(dv9 , dv13);
+		t2  =  _mm512_max_epu32(dv10, dv14);
+		t3  =  _mm512_max_epu32(dv11, dv15);
+		t4  =  _mm512_max_epu32(dv12, dv16);
+		dv13 = _mm512_min_epu32(dv9 , dv13);
+		dv14 = _mm512_min_epu32(dv10, dv14);
+		dv15 = _mm512_min_epu32(dv11, dv15);
+		dv16 = _mm512_min_epu32(dv12, dv16);
+		dv9  = t1;
+		dv10 = t2;
+		dv11 = t3;
+		dv12 = t4;
+		
+		
+		// distance 32 swaps - just compare the vecs
+		t1 =  _mm512_max_epu32(dv1, dv3);
+		t2 =  _mm512_max_epu32(dv2, dv4);
+		t3 =  _mm512_max_epu32(dv5, dv7);
+		t4 =  _mm512_max_epu32(dv6, dv8);
+		dv3 = _mm512_min_epu32(dv1, dv3);
+		dv4 = _mm512_min_epu32(dv2, dv4);
+		dv7 = _mm512_min_epu32(dv5, dv7);
+		dv8 = _mm512_min_epu32(dv6, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv5 = t3;
+		dv6 = t4;
+
+		t1  =  _mm512_max_epu32(dv9 , dv11);
+		t2  =  _mm512_max_epu32(dv10, dv12);
+		t3  =  _mm512_max_epu32(dv13, dv15);
+		t4  =  _mm512_max_epu32(dv14, dv16);
+		dv11 = _mm512_min_epu32(dv9 , dv11);
+		dv12 = _mm512_min_epu32(dv10, dv12);
+		dv15 = _mm512_min_epu32(dv13, dv15);
+		dv16 = _mm512_min_epu32(dv14, dv16);
+		dv9  = t1;
+		dv10 = t2;
+		dv13 = t3;
+		dv14 = t4;
+		
+		// distance 16 swaps - just compare the vecs
+		t1 =  _mm512_max_epu32(dv1, dv2);
+		t2 =  _mm512_max_epu32(dv3, dv4);
+		t3 =  _mm512_max_epu32(dv5, dv6);
+		t4 =  _mm512_max_epu32(dv7, dv8);
+		dv2 = _mm512_min_epu32(dv1, dv2);
+		dv4 = _mm512_min_epu32(dv3, dv4);
+		dv6 = _mm512_min_epu32(dv5, dv6);
+		dv8 = _mm512_min_epu32(dv7, dv8);
+		dv1 = t1;
+		dv3 = t2;
+		dv5 = t3;
+		dv7 = t4;
+
+		t1  =  _mm512_max_epu32(dv9 , dv10);
+		t2  =  _mm512_max_epu32(dv11, dv12);
+		t3  =  _mm512_max_epu32(dv13, dv14);
+		t4  =  _mm512_max_epu32(dv15, dv16);
+		dv10 = _mm512_min_epu32(dv9 , dv10);
+		dv12 = _mm512_min_epu32(dv11, dv12);
+		dv14 = _mm512_min_epu32(dv13, dv14);
+		dv16 = _mm512_min_epu32(dv15, dv16);
+		dv9  = t1;
+		dv11 = t2;
+		dv13 = t3;
+		dv15 = t4;
+		
+		// distance 8 swaps - 256 bits
+		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0x00ff, 0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		SWAP256x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		MINMAX(0x00ff, 0xFF00, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		
+		// distance 4 swaps
+		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0x0f0f, 0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		SWAP128x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		MINMAX(0x0f0f, 0xF0F0, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		
+		// distance 2 swaps
+		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0x3333, 0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		SWAP64x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		MINMAX(0x3333, 0xCCCC, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		
+		// adjacent swaps
+		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0x5555, 0xaaaa, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		SWAP32x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		MINMAX(0x5555, 0xaaaa, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+	}
+	else
+	{
+		// distance 128 swaps - just compare the vecs
+		t1 =  _mm512_min_epu32(dv1, dv9 );
+		t2 =  _mm512_min_epu32(dv2, dv10);
+		t3 =  _mm512_min_epu32(dv3, dv11);
+		t4 =  _mm512_min_epu32(dv4, dv12);
+		dv9  = _mm512_max_epu32(dv1, dv9 );
+		dv10 = _mm512_max_epu32(dv2, dv10);
+		dv11 = _mm512_max_epu32(dv3, dv11);
+		dv12 = _mm512_max_epu32(dv4, dv12);
+		dv1 = t1;
+		dv2 = t2;
+		dv3 = t3;
+		dv4 = t4;
+
+		t1  =  _mm512_min_epu32(dv5, dv13);
+		t2  =  _mm512_min_epu32(dv6, dv14);
+		t3  =  _mm512_min_epu32(dv7, dv15);
+		t4  =  _mm512_min_epu32(dv8, dv16);
+		dv13 = _mm512_max_epu32(dv5, dv13);
+		dv14 = _mm512_max_epu32(dv6, dv14);
+		dv15 = _mm512_max_epu32(dv7, dv15);
+		dv16 = _mm512_max_epu32(dv8, dv16);
+		dv5 = t1;
+		dv6 = t2;
+		dv7 = t3;
+		dv8 = t4;
+		
+		// dist-64 swaps
+		t1 =  _mm512_min_epu32(dv1, dv5);
+		t2 =  _mm512_min_epu32(dv2, dv6);
+		t3 =  _mm512_min_epu32(dv3, dv7);
+		t4 =  _mm512_min_epu32(dv4, dv8);
+		dv5 = _mm512_max_epu32(dv1, dv5);
+		dv6 = _mm512_max_epu32(dv2, dv6);
+		dv7 = _mm512_max_epu32(dv3, dv7);
+		dv8 = _mm512_max_epu32(dv4, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv3 = t3;
+		dv4 = t4;
+
+		t1  =  _mm512_min_epu32(dv9 , dv13);
+		t2  =  _mm512_min_epu32(dv10, dv14);
+		t3  =  _mm512_min_epu32(dv11, dv15);
+		t4  =  _mm512_min_epu32(dv12, dv16);
+		dv13 = _mm512_max_epu32(dv9 , dv13);
+		dv14 = _mm512_max_epu32(dv10, dv14);
+		dv15 = _mm512_max_epu32(dv11, dv15);
+		dv16 = _mm512_max_epu32(dv12, dv16);
+		dv9  = t1;
+		dv10 = t2;
+		dv11 = t3;
+		dv12 = t4;
+		
+		
+		// distance 32 swaps - just compare the vecs
+		t1 =  _mm512_min_epu32(dv1, dv3);
+		t2 =  _mm512_min_epu32(dv2, dv4);
+		t3 =  _mm512_min_epu32(dv5, dv7);
+		t4 =  _mm512_min_epu32(dv6, dv8);
+		dv3 = _mm512_max_epu32(dv1, dv3);
+		dv4 = _mm512_max_epu32(dv2, dv4);
+		dv7 = _mm512_max_epu32(dv5, dv7);
+		dv8 = _mm512_max_epu32(dv6, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv5 = t3;
+		dv6 = t4;
+
+		t1  =  _mm512_min_epu32(dv9 , dv11);
+		t2  =  _mm512_min_epu32(dv10, dv12);
+		t3  =  _mm512_min_epu32(dv13, dv15);
+		t4  =  _mm512_min_epu32(dv14, dv16);
+		dv11 = _mm512_max_epu32(dv9 , dv11);
+		dv12 = _mm512_max_epu32(dv10, dv12);
+		dv15 = _mm512_max_epu32(dv13, dv15);
+		dv16 = _mm512_max_epu32(dv14, dv16);
+		dv9  = t1;
+		dv10 = t2;
+		dv13 = t3;
+		dv14 = t4;
+		
+		// distance 16 swaps - just compare the vecs
+		t1 =  _mm512_min_epu32(dv1, dv2);
+		t2 =  _mm512_min_epu32(dv3, dv4);
+		t3 =  _mm512_min_epu32(dv5, dv6);
+		t4 =  _mm512_min_epu32(dv7, dv8);
+		dv2 = _mm512_max_epu32(dv1, dv2);
+		dv4 = _mm512_max_epu32(dv3, dv4);
+		dv6 = _mm512_max_epu32(dv5, dv6);
+		dv8 = _mm512_max_epu32(dv7, dv8);
+		dv1 = t1;
+		dv3 = t2;
+		dv5 = t3;
+		dv7 = t4;
+
+		t1  =  _mm512_min_epu32(dv9 , dv10);
+		t2  =  _mm512_min_epu32(dv11, dv12);
+		t3  =  _mm512_min_epu32(dv13, dv14);
+		t4  =  _mm512_min_epu32(dv15, dv16);
+		dv10 = _mm512_max_epu32(dv9 , dv10);
+		dv12 = _mm512_max_epu32(dv11, dv12);
+		dv14 = _mm512_max_epu32(dv13, dv14);
+		dv16 = _mm512_max_epu32(dv15, dv16);
+		dv9  = t1;
+		dv11 = t2;
+		dv13 = t3;
+		dv15 = t4;
+		
+		// distance 8 swaps - 256 bits
+		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		SWAP256x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		MINMAX(0xFF00, 0x00ff, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		
+		// distance 4 swaps
+		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0xf0f0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		SWAP128x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		MINMAX(0xf0f0, 0x0f0f, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+
+		// distance 2 swaps
+		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		SWAP64x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		MINMAX(0xCCCC, 0x3333, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		
+		// adjacent swaps
+		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0xaaaa, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		SWAP32x8(dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+		MINMAX(0xaaaa, 0x5555, dv9, dv10, dv11, dv12, dv13, dv14, dv15, dv16);
+
+	}
+
+	_mm512_store_epi32(data, dv1);
+	_mm512_store_epi32(data + 16, dv2);
+	_mm512_store_epi32(data + 32, dv3);
+	_mm512_store_epi32(data + 48, dv4);
+	_mm512_store_epi32(data + 64, dv5);
+	_mm512_store_epi32(data + 80, dv6);
+	_mm512_store_epi32(data + 96, dv7);
+	_mm512_store_epi32(data + 112, dv8);
+	_mm512_store_epi32(data + 128    , dv9);
+	_mm512_store_epi32(data + 9 * 16 , dv10);
+	_mm512_store_epi32(data + 10 * 16, dv11);
+	_mm512_store_epi32(data + 11 * 16, dv12);
+	_mm512_store_epi32(data + 12 * 16, dv13);
+	_mm512_store_epi32(data + 13 * 16, dv14);
+	_mm512_store_epi32(data + 14 * 16, dv15);
+	_mm512_store_epi32(data + 15 * 16, dv16);
+	
 	return;
 }
 
@@ -3815,6 +3955,33 @@ void bitonic_merge(uint64_t *data, uint32_t sz, int dir)
 	bitonic_merge(data + sz / 2, sz / 2, dir);
 }
 
+void L1sort(uint64_t *data, int dir)
+{
+	// L1 is assumed 32k bytes. At 8 bytes per element
+	// and 64 elements per sort there are 64 passes of
+	// the base case over L1.
+	int j;
+	for (j = 0; j < 64; j++) {
+		// alternating up/down sorts so we can finish using merge only
+		bitonic_sort_dir_64(data + j * 64, j & 1);
+	}
+	
+	uint32_t bitonic_sort_size = 128;
+	while (bitonic_sort_size < 4096)
+	{
+		for (j = 0; j < 4096 / bitonic_sort_size; j++) {
+			// up/down merges of the previous up/down sorts, output is up/down sorted
+			bitonic_merge(&data[j * bitonic_sort_size], bitonic_sort_size, j & 1);
+		}
+		bitonic_sort_size *= 2;
+	}
+	
+	// final merge in the specified direction
+	bitonic_merge(data, 4096, dir);
+	
+	return;
+}
+		
 //#define non_recursive
 void bitonic_sort(uint64_t *data, uint32_t sz, int dir)
 {
@@ -3826,16 +3993,28 @@ void bitonic_sort(uint64_t *data, uint32_t sz, int dir)
 	}
 	
 #ifdef non_recursive
-	// slower for large sorts: less cache efficient as 
-	// written compared to the recursive version
+
+	if (sz < 4096)
+	{	
+		// two half-size bitonic sorts,
+		// with opposite directions.
+		bitonic_sort(data, sz / 2, 0);
+		bitonic_sort(data + sz / 2, sz / 2, 1);
+		
+		// merge in the specified direction
+		bitonic_merge(data, sz, dir);
+	}
+	else
 	{
+		// to make this more cache-friendly, get L1-sized chunks up/down sorted
+		// and then merge those together.  L1 is typically 4096 uint64_t's (32k bytes).
 		int j;
-		for (j = 0; j < sz / 64; j++) {
+		for (j = 0; j < sz / 4096; j++) {
 			// alternating up/down sorts so we can finish using merge only
-			bitonic_sort_dir_64(data + j * 64, j & 1);
+			L1sort(data + j * 4096, j & 1);
 		}
 		
-		uint32_t bitonic_sort_size = 128;
+		uint32_t bitonic_sort_size = 8192;
 		while (bitonic_sort_size < sz)
 		{
 			for (j = 0; j < sz / bitonic_sort_size; j++) {
@@ -3851,7 +4030,7 @@ void bitonic_sort(uint64_t *data, uint32_t sz, int dir)
 	}
 #else
 	
-	// two parallel half-size bitonic sorts,
+	// two half-size bitonic sorts,
 	// with opposite directions.
 	bitonic_sort(data, sz / 2, 0);
 	bitonic_sort(data + sz / 2, sz / 2, 1);
@@ -3884,13 +4063,7 @@ void sort(uint64_t *data, uint32_t sz, int dir)
 	uint32_t new_sz = sz;
 	if ((sz & (sz - 1)) > 0)
 	{
-		new_sz = my_clz32(sz);
-		if (new_sz == 0)
-		{
-			printf("buffer too big, sz must be <= 2^31 in sort()\n");
-			exit(0);
-		}
-		new_sz = 1 << (32 - new_sz + 1);
+		new_sz = next_power_2(sz);
 	}
 		
 	uint64_t *adata;
@@ -3908,9 +4081,9 @@ void sort(uint64_t *data, uint32_t sz, int dir)
 	if ((new_sz - sz) > 0)
 	{
 		if (dir == 0)
-			memset(adata + sz, 0xff, (new_sz - sz));
+			memset(adata + sz, 0xff, (new_sz - sz) * sizeof(uint64));
 		else
-			memset(adata + sz, 0, (new_sz - sz));
+			memset(adata + sz, 0, (new_sz - sz) * sizeof(uint64));
 	}
 	
 	bitonic_sort(adata, new_sz, dir);
@@ -3999,34 +4172,22 @@ void bitonic_merge32(uint32_t *data, uint32_t sz, int dir)
 			dv15 = _mm512_load_epi32(data + i * 128 + sz/2 + 96);
 			dv16 = _mm512_load_epi32(data + i * 128 + sz/2 + 112);
 
-				m1 = _mm512_cmplt_epu32_mask(dv1, dv9);
-				m2 = _mm512_cmplt_epu32_mask(dv2, dv10);
-				m3 = _mm512_cmplt_epu32_mask(dv3, dv11);
-				m4 = _mm512_cmplt_epu32_mask(dv4, dv12);
-				m5 = _mm512_cmplt_epu32_mask(dv5, dv13);
-				m6 = _mm512_cmplt_epu32_mask(dv6, dv14);
-				m7 = _mm512_cmplt_epu32_mask(dv7, dv15);
-				m8 = _mm512_cmplt_epu32_mask(dv8, dv16);
-
-
-			t1 = _mm512_mask_blend_epi32(m1, dv1, dv9);
-			t2 = _mm512_mask_blend_epi32(m2, dv2, dv10);
-			t3 = _mm512_mask_blend_epi32(m3, dv3, dv11);
-			t4 = _mm512_mask_blend_epi32(m4, dv4, dv12);
-			t5 = _mm512_mask_blend_epi32(m5, dv5, dv13);
-			t6 = _mm512_mask_blend_epi32(m6, dv6, dv14);
-			t7 = _mm512_mask_blend_epi32(m7, dv7, dv15);
-			t8 = _mm512_mask_blend_epi32(m8, dv8, dv16);
-			
-			dv9 = _mm512_mask_blend_epi32(m1, dv9, dv1);
-			dv10 = _mm512_mask_blend_epi32(m2, dv10, dv2);
-			dv11 = _mm512_mask_blend_epi32(m3, dv11, dv3);
-			dv12 = _mm512_mask_blend_epi32(m4, dv12, dv4);
-			dv13 = _mm512_mask_blend_epi32(m5, dv13, dv5);
-			dv14 = _mm512_mask_blend_epi32(m6, dv14, dv6);
-			dv15 = _mm512_mask_blend_epi32(m7, dv15, dv7);
-			dv16 = _mm512_mask_blend_epi32(m8, dv16, dv8);
-
+			t1 =  _mm512_max_epu32(dv1, dv9 );
+			t2 =  _mm512_max_epu32(dv2, dv10);
+			t3 =  _mm512_max_epu32(dv3, dv11);
+			t4 =  _mm512_max_epu32(dv4, dv12);
+			t5 =  _mm512_max_epu32(dv5, dv13);
+			t6 =  _mm512_max_epu32(dv6, dv14);
+			t7 =  _mm512_max_epu32(dv7, dv15);
+			t8 =  _mm512_max_epu32(dv8, dv16);
+			dv9  = _mm512_min_epu32(dv1, dv9 );
+			dv10 = _mm512_min_epu32(dv2, dv10);
+			dv11 = _mm512_min_epu32(dv3, dv11);
+			dv12 = _mm512_min_epu32(dv4, dv12);
+			dv13 = _mm512_min_epu32(dv5, dv13);
+			dv14 = _mm512_min_epu32(dv6, dv14);
+			dv15 = _mm512_min_epu32(dv7, dv15);
+			dv16 = _mm512_min_epu32(dv8, dv16);
 			dv1 = t1;
 			dv2 = t2;
 			dv3 = t3;
@@ -4053,6 +4214,69 @@ void bitonic_merge32(uint32_t *data, uint32_t sz, int dir)
 			_mm512_store_epi64(data + i * 128 + sz/2 + 80, dv14);
 			_mm512_store_epi64(data + i * 128 + sz/2 + 96, dv15);
 			_mm512_store_epi64(data + i * 128 + sz/2 + 112, dv16);
+			
+			// swap 128 elements at starting offset i * 128
+			//dv1 = _mm512_load_epi32(data + i * 256 + 8*16);
+			//dv2 = _mm512_load_epi32(data + i * 256 + 9*16);
+			//dv3 = _mm512_load_epi32(data + i * 256 + 10*16);
+			//dv4 = _mm512_load_epi32(data + i * 256 + 11*16);
+			//dv5 = _mm512_load_epi32(data + i * 256 + 12*16);
+			//dv6 = _mm512_load_epi32(data + i * 256 + 13*16);
+			//dv7 = _mm512_load_epi32(data + i * 256 + 14*16);
+			//dv8 = _mm512_load_epi32(data + i * 256 + 15*16);
+			//
+			//// with 128 elements at offset i * 128 + stride (sz/2)
+			//dv9 = _mm512_load_epi32(data  + i * 256 + sz/2 + 8*16 );
+			//dv10 = _mm512_load_epi32(data + i * 256 + sz/2 + 9*16 );
+			//dv11 = _mm512_load_epi32(data + i * 256 + sz/2 + 10*16);
+			//dv12 = _mm512_load_epi32(data + i * 256 + sz/2 + 11*16);
+			//dv13 = _mm512_load_epi32(data + i * 256 + sz/2 + 12*16);
+			//dv14 = _mm512_load_epi32(data + i * 256 + sz/2 + 13*16);
+			//dv15 = _mm512_load_epi32(data + i * 256 + sz/2 + 14*16);
+			//dv16 = _mm512_load_epi32(data + i * 256 + sz/2 + 15*16);
+			//
+			//t1 =  _mm512_max_epu32(dv1, dv9 );
+			//t2 =  _mm512_max_epu32(dv2, dv10);
+			//t3 =  _mm512_max_epu32(dv3, dv11);
+			//t4 =  _mm512_max_epu32(dv4, dv12);
+			//t5 =  _mm512_max_epu32(dv5, dv13);
+			//t6 =  _mm512_max_epu32(dv6, dv14);
+			//t7 =  _mm512_max_epu32(dv7, dv15);
+			//t8 =  _mm512_max_epu32(dv8, dv16);
+			//dv9  = _mm512_min_epu32(dv1, dv9 );
+			//dv10 = _mm512_min_epu32(dv2, dv10);
+			//dv11 = _mm512_min_epu32(dv3, dv11);
+			//dv12 = _mm512_min_epu32(dv4, dv12);
+			//dv13 = _mm512_min_epu32(dv5, dv13);
+			//dv14 = _mm512_min_epu32(dv6, dv14);
+			//dv15 = _mm512_min_epu32(dv7, dv15);
+			//dv16 = _mm512_min_epu32(dv8, dv16);
+			//dv1 = t1;
+			//dv2 = t2;
+			//dv3 = t3;
+			//dv4 = t4;
+			//dv5 = t5;
+			//dv6 = t6;
+			//dv7 = t7;
+			//dv8 = t8;
+			//
+			//_mm512_store_epi32(data + i * 256 + 8*16 , dv1);
+			//_mm512_store_epi32(data + i * 256 + 9*16 , dv2);
+			//_mm512_store_epi32(data + i * 256 + 10*16, dv3);
+			//_mm512_store_epi32(data + i * 256 + 11*16, dv4);
+			//_mm512_store_epi32(data + i * 256 + 12*16, dv5);
+			//_mm512_store_epi32(data + i * 256 + 13*16, dv6);
+			//_mm512_store_epi32(data + i * 256 + 14*16, dv7);
+			//_mm512_store_epi32(data + i * 256 + 15*16, dv8);
+			//
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 8*16 , dv1);
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 9*16 , dv2);
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 10*16, dv3);
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 11*16, dv4);
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 12*16, dv5);
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 13*16, dv6);
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 14*16, dv7);
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 15*16, dv8);
 
 		}
 	}
@@ -4081,34 +4305,22 @@ void bitonic_merge32(uint32_t *data, uint32_t sz, int dir)
 			dv15 = _mm512_load_epi32(data + i * 128 + sz/2 + 96);
 			dv16 = _mm512_load_epi32(data + i * 128 + sz/2 + 112);
 
-				m1 = _mm512_cmpgt_epu32_mask(dv1, dv9);
-				m2 = _mm512_cmpgt_epu32_mask(dv2, dv10);
-				m3 = _mm512_cmpgt_epu32_mask(dv3, dv11);
-				m4 = _mm512_cmpgt_epu32_mask(dv4, dv12);
-				m5 = _mm512_cmpgt_epu32_mask(dv5, dv13);
-				m6 = _mm512_cmpgt_epu32_mask(dv6, dv14);
-				m7 = _mm512_cmpgt_epu32_mask(dv7, dv15);
-				m8 = _mm512_cmpgt_epu32_mask(dv8, dv16);
-
-
-			t1 = _mm512_mask_blend_epi32(m1, dv1, dv9);
-			t2 = _mm512_mask_blend_epi32(m2, dv2, dv10);
-			t3 = _mm512_mask_blend_epi32(m3, dv3, dv11);
-			t4 = _mm512_mask_blend_epi32(m4, dv4, dv12);
-			t5 = _mm512_mask_blend_epi32(m5, dv5, dv13);
-			t6 = _mm512_mask_blend_epi32(m6, dv6, dv14);
-			t7 = _mm512_mask_blend_epi32(m7, dv7, dv15);
-			t8 = _mm512_mask_blend_epi32(m8, dv8, dv16);
-			
-			dv9 = _mm512_mask_blend_epi32(m1, dv9, dv1);
-			dv10 = _mm512_mask_blend_epi32(m2, dv10, dv2);
-			dv11 = _mm512_mask_blend_epi32(m3, dv11, dv3);
-			dv12 = _mm512_mask_blend_epi32(m4, dv12, dv4);
-			dv13 = _mm512_mask_blend_epi32(m5, dv13, dv5);
-			dv14 = _mm512_mask_blend_epi32(m6, dv14, dv6);
-			dv15 = _mm512_mask_blend_epi32(m7, dv15, dv7);
-			dv16 = _mm512_mask_blend_epi32(m8, dv16, dv8);
-
+			t1 =  _mm512_min_epu32(dv1, dv9 );
+			t2 =  _mm512_min_epu32(dv2, dv10);
+			t3 =  _mm512_min_epu32(dv3, dv11);
+			t4 =  _mm512_min_epu32(dv4, dv12);
+			t5 =  _mm512_min_epu32(dv5, dv13);
+			t6 =  _mm512_min_epu32(dv6, dv14);
+			t7 =  _mm512_min_epu32(dv7, dv15);
+			t8 =  _mm512_min_epu32(dv8, dv16);
+			dv9  = _mm512_max_epu32(dv1, dv9 );
+			dv10 = _mm512_max_epu32(dv2, dv10);
+			dv11 = _mm512_max_epu32(dv3, dv11);
+			dv12 = _mm512_max_epu32(dv4, dv12);
+			dv13 = _mm512_max_epu32(dv5, dv13);
+			dv14 = _mm512_max_epu32(dv6, dv14);
+			dv15 = _mm512_max_epu32(dv7, dv15);
+			dv16 = _mm512_max_epu32(dv8, dv16);
 			dv1 = t1;
 			dv2 = t2;
 			dv3 = t3;
@@ -4135,6 +4347,69 @@ void bitonic_merge32(uint32_t *data, uint32_t sz, int dir)
 			_mm512_store_epi64(data + i * 128 + sz/2 + 80, dv14);
 			_mm512_store_epi64(data + i * 128 + sz/2 + 96, dv15);
 			_mm512_store_epi64(data + i * 128 + sz/2 + 112, dv16);
+			
+			// swap 128 elements at starting offset i * 128
+			//dv1 = _mm512_load_epi32(data + i * 256 + 8*16);
+			//dv2 = _mm512_load_epi32(data + i * 256 + 9*16);
+			//dv3 = _mm512_load_epi32(data + i * 256 + 10*16);
+			//dv4 = _mm512_load_epi32(data + i * 256 + 11*16);
+			//dv5 = _mm512_load_epi32(data + i * 256 + 12*16);
+			//dv6 = _mm512_load_epi32(data + i * 256 + 13*16);
+			//dv7 = _mm512_load_epi32(data + i * 256 + 14*16);
+			//dv8 = _mm512_load_epi32(data + i * 256 + 15*16);
+			//
+			//// with 128 elements at offset i * 128 + stride (sz/2)
+			//dv9 = _mm512_load_epi32(data  + i * 256 + sz/2 + 8*16 );
+			//dv10 = _mm512_load_epi32(data + i * 256 + sz/2 + 9*16 );
+			//dv11 = _mm512_load_epi32(data + i * 256 + sz/2 + 10*16);
+			//dv12 = _mm512_load_epi32(data + i * 256 + sz/2 + 11*16);
+			//dv13 = _mm512_load_epi32(data + i * 256 + sz/2 + 12*16);
+			//dv14 = _mm512_load_epi32(data + i * 256 + sz/2 + 13*16);
+			//dv15 = _mm512_load_epi32(data + i * 256 + sz/2 + 14*16);
+			//dv16 = _mm512_load_epi32(data + i * 256 + sz/2 + 15*16);
+			//
+			//t1 =  _mm512_min_epu32(dv1, dv9 );
+			//t2 =  _mm512_min_epu32(dv2, dv10);
+			//t3 =  _mm512_min_epu32(dv3, dv11);
+			//t4 =  _mm512_min_epu32(dv4, dv12);
+			//t5 =  _mm512_min_epu32(dv5, dv13);
+			//t6 =  _mm512_min_epu32(dv6, dv14);
+			//t7 =  _mm512_min_epu32(dv7, dv15);
+			//t8 =  _mm512_min_epu32(dv8, dv16);
+			//dv9  = _mm512_max_epu32(dv1, dv9 );
+			//dv10 = _mm512_max_epu32(dv2, dv10);
+			//dv11 = _mm512_max_epu32(dv3, dv11);
+			//dv12 = _mm512_max_epu32(dv4, dv12);
+			//dv13 = _mm512_max_epu32(dv5, dv13);
+			//dv14 = _mm512_max_epu32(dv6, dv14);
+			//dv15 = _mm512_max_epu32(dv7, dv15);
+			//dv16 = _mm512_max_epu32(dv8, dv16);
+			//dv1 = t1;
+			//dv2 = t2;
+			//dv3 = t3;
+			//dv4 = t4;
+			//dv5 = t5;
+			//dv6 = t6;
+			//dv7 = t7;
+			//dv8 = t8;
+			//
+			//_mm512_store_epi32(data + i * 256 + 8*16 , dv1);
+			//_mm512_store_epi32(data + i * 256 + 9*16 , dv2);
+			//_mm512_store_epi32(data + i * 256 + 10*16, dv3);
+			//_mm512_store_epi32(data + i * 256 + 11*16, dv4);
+			//_mm512_store_epi32(data + i * 256 + 12*16, dv5);
+			//_mm512_store_epi32(data + i * 256 + 13*16, dv6);
+			//_mm512_store_epi32(data + i * 256 + 14*16, dv7);
+			//_mm512_store_epi32(data + i * 256 + 15*16, dv8);
+			//
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 8*16 , dv1);
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 9*16 , dv2);
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 10*16, dv3);
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 11*16, dv4);
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 12*16, dv5);
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 13*16, dv6);
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 14*16, dv7);
+			//_mm512_store_epi64(data + i * 256 + sz/2 + 15*16, dv8);
 
 		}
 	}
@@ -4257,6 +4532,93 @@ void parsort(uint64_t *data, uint32_t sz, int dir, int threads)
 	// final merge in the specified direction
 	bitonic_merge(data, sz, dir);
 	
+	return;
+}
+
+// for 20M element problems
+#define num_buckets 256
+#define SH 8
+#define portion_sz 64
+
+void bucket_sort2(uint64_t *buckets, uint32_t bucket_size, uint32_t *bucket_counts, 
+	uint64_t *data, uint32_t key_bits, uint32_t sz)
+{
+	// sort data into buckets by most significant bits.
+	// assume the buckets have been allocated of sufficient size for the random data.
+	// the buckets are subdivided into cache-friendly portions of size portion_sz * num_buckets.
+	// once a particular portion is filled for a bucket, increment that portion's offset by
+	// portion_sz * num_buckets to being filling the next portion.
+	int i;
+	uint64_t *current_bucket[num_buckets];
+	uint64_t portion_cnt[num_buckets];
+	
+	for (i = 0; i < num_buckets; i++) {bucket_counts[i] = 0;};
+	for (i = 0; i < num_buckets; i++) 
+	{
+		current_bucket[i] = buckets + i * portion_sz;
+		portion_cnt[i] = 0;
+	}
+	
+	for (i = 0; i < sz; i++) {
+		uint32 key = (uint32)(data[i] >> (key_bits - SH));
+		uint64_t *bptr = current_bucket[key];
+		//if(key>=num_buckets) {printf("error key too big: %u (%lu)\n", key, data[i]); fflush(stdout);}
+		bptr[portion_cnt[key]] = data[i];
+		portion_cnt[key]++;
+		
+		if (portion_cnt[key] == portion_sz)
+		{
+			current_bucket[key] += portion_sz * num_buckets;
+			bucket_counts[key] += portion_sz;
+			portion_cnt[key] = 0;
+		}
+	}
+	
+	for (i = 0; i < num_buckets; i++)
+	{
+		bucket_counts[i] += portion_cnt[i];
+	}
+		
+	return;
+}
+
+#define sm_bucket_sz 32
+void bucket_sort(uint64_t *buckets, uint32_t bucket_size, uint32_t *bucket_counts, 
+	uint64_t *data, uint32_t key_bits, uint32_t sz)
+{
+	// sort data into buckets by most significant bits.
+	// assume the buckets have been allocated of sufficient size for the random data.
+	
+	// we sort into a set of smaller buckets that fit in L1 and periodically
+	// dump these buckets into the main buckets.
+	// L1 has room for 4096 uint64_t's.  64 buckets is 64 elements in each.
+	uint64_t sm_buckets[num_buckets*sm_bucket_sz];
+	uint32_t sm_bcnt[num_buckets];
+	int i;
+	
+	for (i = 0; i < num_buckets; i++) {bucket_counts[i] = 0;};
+	for (i = 0; i < num_buckets; i++) {sm_bcnt[i] = 0;};
+	
+	for (i = 0; i < sz; i++) {
+		uint32 key = (uint32)(data[i] >> (key_bits - SH));
+		//if(key>=num_buckets) {printf("error key too big: %u (%lu)\n", key, data[i]); fflush(stdout);}
+		sm_buckets[(key * sm_bucket_sz) + sm_bcnt[key]] = data[i];
+		sm_bcnt[key]++;
+		
+		if (sm_bcnt[key] == sm_bucket_sz)
+		{
+			memcpy(buckets + key * bucket_size + bucket_counts[key], sm_buckets + key * sm_bucket_sz, sm_bucket_sz * sizeof(uint64_t));
+			bucket_counts[key] += sm_bucket_sz;
+			sm_bcnt[key] = 0;
+		}
+	}
+	
+	for (i = 0; i < num_buckets; i++)
+	{
+		memcpy(buckets + i * bucket_size + bucket_counts[i], sm_buckets + i * sm_bucket_sz, sm_bcnt[i] * sizeof(uint64_t));
+		bucket_counts[i] += sm_bcnt[i];
+	}
+		
 	return;
 }
 
@@ -4617,6 +4979,158 @@ done:
 	return 0;
 }
 
+
+int main4(int argc, char ** argv)
+{
+	uint32 i, j, n;
+	uint32 num_sort;
+	uint32 num_reps;
+	uint32 key_bits;
+	uint32 sort_sz;
+	double seconds;
+	double tseconds = 0.0;
+	uint32 seed1 = 0x11111;
+	uint32 seed2 = 0x22222;
+	
+	if ((argc < 5) || (argc > 6))
+	{
+		printf("usage: vecsort sort_sz_bits key_bits num_sort num_reps <seed>\n");
+		exit(0);
+	}
+	
+	sort_sz = strtoul(argv[1], NULL, 10);
+	key_bits = strtoul(argv[2], NULL, 10);
+	num_sort = strtoul(argv[3], NULL, 10);
+	num_reps = strtoul(argv[4], NULL, 10);
+	
+	if (argc == 7)
+	{
+		uint32 s = strtoul(argv[5], NULL, 10);
+		seed1 = s & 0xffff;
+		seed2 = s >> 16;
+		printf("seed: %u\n", s);
+	}
+
+	uint64_t *loc_keys = (uint64 *)aligned_malloc(num_sort * sizeof(uint64), 64);
+	uint32_t bucket_size = next_power_2(num_sort / num_buckets);
+	uint64_t *buckets = (uint64_t*)aligned_malloc(2 * num_buckets * bucket_size * sizeof(uint64_t), 64);
+	uint32_t bucket_counts[num_buckets];
+	uint64_t *merge_bkt = (uint64_t*)aligned_malloc(bucket_size * sizeof(uint64_t), 64);
+	printf("num buckets: %u, bucket size = %u\n", num_buckets, bucket_size);
+	
+	uint32_t total_collisions = 0;
+	for (n = 0; n < num_reps; n++) {
+		
+		for (i = 0; i < num_sort; i++) {
+			uint64 key = (uint64)get_rand(&seed1, &seed2) << 32 |
+					get_rand(&seed1, &seed2);
+					
+			loc_keys[i] = key >> (64 - key_bits);
+		}
+		
+		seconds = get_cpu_time();
+		
+		uint32 num_collisions = 0;
+		
+		// sort into N buckets
+		bucket_sort2(buckets, bucket_size, bucket_counts, loc_keys, key_bits, num_sort);
+		//printf("finished bucket sort\n"); fflush(stdout);
+		
+		// then sort each bucket and count collisions in each.
+		// matching keys will always be in the same bucket.
+		for (j = 0; j < num_buckets; j++) {
+			int k;
+			for (k = 0; k < bucket_size / portion_sz; k++) {
+				memcpy(&merge_bkt[k * portion_sz], buckets + j * portion_sz + k * portion_sz * num_buckets, portion_sz * sizeof(uint64_t)); 
+				bitonic_sort(&merge_bkt[k * portion_sz], portion_sz, k & 1);
+			}
+
+			if (bucket_counts[j] < bucket_size)
+				memset(&merge_bkt[bucket_counts[j]], 0xff, (bucket_size - bucket_counts[j]) * sizeof(uint64));
+			//else if (bucket_counts[j] > bucket_size)
+			//	printf("bucket %u count greater than bucket size %u\n", bucket_counts[j], bucket_size);
+			
+			//bitonic_sort(merge_bkt, bucket_size, k & 1);
+			
+			//printf("commencing merge on bucket data %u\n", j); fflush(stdout);
+			uint32_t merge_sz = 2 * portion_sz;
+			while (merge_sz < bucket_size)
+			{
+				for (k = 0; k < bucket_size / merge_sz; k++) {
+					// up/down merges of the previous up/down sorts, output is up/down sorted
+					bitonic_merge(&merge_bkt[k * merge_sz], merge_sz, k & 1);
+				}
+				merge_sz *= 2;
+			}
+		
+			// final merge in the specified direction
+			bitonic_merge(merge_bkt, bucket_size, 0);
+			
+			//printf("\nbucket %u\n", j);
+			//for (k = 0; k < bucket_size; k++) { //bucket_counts[j]; k++) {
+			//	if ((k & 7) == 0)
+			//		printf("\n");
+			//	printf("%016lx ", merge_bkt[k]);
+			//}
+
+			for (k = 1; k < bucket_counts[j]; k++) {
+				if ((merge_bkt[k] == merge_bkt[k - 1]) && (merge_bkt[k] > 0)) {
+					//printf("collision @ index %u\n", k);
+					num_collisions++;
+				}
+			}
+		}
+
+		tseconds += (get_cpu_time() - seconds);
+		total_collisions += num_collisions;
+
+		//printf("found %u total collisions in %u elements\n", 
+		//	num_collisions, num_sort); fflush(stdout);
+	}
+	
+	aligned_free(buckets);
+	aligned_free(merge_bkt);
+	
+	printf("sort %u x %u-bit keys with %u total collisions in average of %lf seconds\n", 
+		num_sort, key_bits, total_collisions, tseconds / (double)num_reps);
+	
+	tseconds = 0.0;
+	total_collisions = 0;
+	for (n = 0; n < num_reps; n++) {
+		
+		for (i = 0; i < num_sort; i++) {
+			uint64 key = (uint64)get_rand(&seed1, &seed2) << 32 |
+					get_rand(&seed1, &seed2);
+					
+			loc_keys[i] = key >> (64 - key_bits);
+		}
+		
+		seconds = get_cpu_time();
+		
+		uint32 num_collisions = 0;
+		
+		qsort(loc_keys, num_sort, sizeof(uint64), &qcomp_uint64);
+		
+		for (j = 1; j < num_sort; j++) {
+			if (loc_keys[j] == loc_keys[j-1]) {
+				num_collisions++;
+			}
+		}
+		
+		tseconds += (get_cpu_time() - seconds);
+
+		//printf("found %u total collisions in %u elements\n", 
+		//	num_collisions, num_sort);
+		total_collisions += num_collisions;
+	}
+	
+done:
+	printf("sort %u x %u-bit keys with %u total collisions in average of %lf seconds\n", 
+		num_sort, key_bits, total_collisions, tseconds / (double)num_reps);
+	
+	aligned_free(loc_keys);
+	return 0;
+}
 
 
 
