@@ -36,7 +36,7 @@
 #include <inttypes.h>
 #include <immintrin.h>
 #include <omp.h>
-
+#include <x86intrin.h>
 
 
 #if defined(WIN32) || defined(_WIN64)
@@ -50,6 +50,7 @@
 #endif
 
 typedef uint8_t uint8;
+typedef uint16_t uint16;
 typedef uint32_t uint32;
 typedef uint64_t uint64;
 
@@ -59,6 +60,30 @@ typedef uint64_t uint64;
 #else
 #define SHOW_PROF /* nothing */
 #endif
+
+static inline uint64_t my_rdtsc(void)
+{
+#if defined(__x86_64__)
+	// supported by GCC and Clang for x86 platform
+	return __rdtsc();
+#elif INLINE_ASM && defined(__aarch64__)
+	// should be a 64 bits wallclock counter
+	// document for old/recent architecture and/or BMC chipsets mention it
+	// could be a 56 bit counter.
+	uint64_t val;
+
+	asm volatile ("mrs %0, cntvct_el0":"=r" (val));
+
+	// I am not sure what the clock unit is, it depends on pre-scaler setup
+	// A multiplication by 32 might be needed on my platform 
+	return val * 32;	// aarch64 emulation on x86_64 ?
+	return ((val / 3) * 25) << 4;	// maybe for ARM M1 ?
+	return val;
+#else
+#error "todo : unsupported _rdtsc implementation\n"
+	return 0;
+#endif
+}
 
 
 int qcomp_uint64(const void *x, const void *y)
@@ -81,6 +106,22 @@ int qcomp_uint32(const void *x, const void *y)
 {
 	uint32_t *xx = (uint32_t *)x;
 	uint32_t *yy = (uint32_t *)y;
+	
+	return (*xx > *yy) - (*xx < *yy);
+	
+	
+	if (*xx > *yy)
+		return 1;
+	else if (*xx == *yy)
+		return 0;
+	else
+		return -1;
+}
+
+int qcomp_uint16(const void *x, const void *y)
+{
+	uint16_t *xx = (uint16_t *)x;
+	uint16_t *yy = (uint16_t *)y;
 	
 	return (*xx > *yy) - (*xx < *yy);
 	
@@ -210,6 +251,43 @@ uint32_t my_clz32(uint64_t n)
 #endif
 }
 
+uint64_t my_ctz32(uint32_t n)
+{
+#if (INLINE_ASM && defined(__x86_64__))
+#if defined(__BMI1__)
+	uint32_t t;
+	asm(" tzcnt %1, %0\n": "=r"(t) : "r"(n) : "flags");
+	return t;
+#else
+	if (n)
+		return __builtin_ctz(n);
+	return 32;
+#endif
+#else
+#if defined(__GNUC__)
+	if (n)
+		return __builtin_ctz(n);
+	return 32;
+#else
+	if (n == 0)
+		return 32;
+	uint32_t r = 0;
+	if ((n & 0xFFFFull) == 0)
+		r += 16, n >>= 16;
+	if ((n & 0xFFull) == 0)
+		r += 8, n >>= 8;
+	if ((n & 0xFull) == 0)
+		r += 4, n >>= 4;
+	if ((n & 0x3ull) == 0)
+		r += 2, n >>= 2;
+	if ((n & 0x1ull) == 0)
+		r += 1;
+	return r;
+#endif
+#endif
+}
+
+
 uint32_t next_power_2(uint32_t sz)
 {
 	uint32_t new_sz = my_clz32(sz);
@@ -223,6 +301,7 @@ uint32_t next_power_2(uint32_t sz)
 
 // intrinsics for swapping N-bit chunks of data within a 512-bit vector
 // that use immediates (faster and fewer registers than needing to load index vectors)
+#define SWAP16(x) _mm512_rol_epi32((x), 16)
 #define SWAP32(x) _mm512_shuffle_epi32((x), 0xB1)
 #define SWAP64(x) _mm512_shuffle_epi32((x), 0x4E)
 #define SWAP128(x) _mm512_permutex_epi64((x), 0x4E)
@@ -231,11 +310,69 @@ uint32_t next_power_2(uint32_t sz)
 // intrinsics for swapping N-bit chunks of data within a 512-bit vector, with N < 32.
 // these require index vectors and the additional extension AVX-512BW
 static __m512i swap8bit_idx;
-static __m512i swap16bit_idx;
 
 #define SWAP8(x) _mm512_shuffle_epi8((x), swap8bit_idx)
-#define SWAP16(x) _mm512_shuffle_epi8((x), swap16bit_idx)
 
+#define SWAP16x2(v1, v2) \
+	dv1_swap = SWAP16(v1);\
+	dv2_swap = SWAP16(v2);
+	
+#define SWAP32x2(v1, v2) \
+	dv1_swap = SWAP32(v1);\
+	dv2_swap = SWAP32(v2);
+	
+#define SWAP64x2(v1, v2) \
+	dv1_swap = SWAP64(v1);\
+	dv2_swap = SWAP64(v2);
+
+#define SWAP128x2(v1, v2) \
+	dv1_swap = SWAP128(v1);\
+	dv2_swap = SWAP128(v2);
+
+#define SWAP256x2(v1, v2) \
+	dv1_swap = SWAP256(v1);\
+	dv2_swap = SWAP256(v2);
+	
+#define SWAP16x4(v1, v2, v3, v4) \
+	dv1_swap = SWAP16(v1);\
+	dv2_swap = SWAP16(v2);\
+	dv3_swap = SWAP16(v3);\
+	dv4_swap = SWAP16(v4);
+	
+#define SWAP32x4(v1, v2, v3, v4) \
+	dv1_swap = SWAP32(v1);\
+	dv2_swap = SWAP32(v2);\
+	dv3_swap = SWAP32(v3);\
+	dv4_swap = SWAP32(v4);
+	
+#define SWAP64x4(v1, v2, v3, v4) \
+	dv1_swap = SWAP64(v1);\
+	dv2_swap = SWAP64(v2);\
+	dv3_swap = SWAP64(v3);\
+	dv4_swap = SWAP64(v4);
+
+#define SWAP128x4(v1, v2, v3, v4) \
+	dv1_swap = SWAP128(v1);\
+	dv2_swap = SWAP128(v2);\
+	dv3_swap = SWAP128(v3);\
+	dv4_swap = SWAP128(v4);
+
+#define SWAP256x4(v1, v2, v3, v4) \
+	dv1_swap = SWAP256(v1);\
+	dv2_swap = SWAP256(v2);\
+	dv3_swap = SWAP256(v3);\
+	dv4_swap = SWAP256(v4);
+	
+#define SWAP16x8(v1, v2, v3, v4, v5, v6, v7, v8) \
+	dv1_swap = SWAP16(v1);\
+	dv2_swap = SWAP16(v2);\
+	dv3_swap = SWAP16(v3);\
+	dv4_swap = SWAP16(v4);\
+	dv5_swap = SWAP16(v5);\
+	dv6_swap = SWAP16(v6);\
+	dv7_swap = SWAP16(v7);\
+	dv8_swap = SWAP16(v8);
+	
 #define SWAP32x8(v1, v2, v3, v4, v5, v6, v7, v8) \
 	dv1_swap = SWAP32(v1);\
 	dv2_swap = SWAP32(v2);\
@@ -275,6 +412,126 @@ static __m512i swap16bit_idx;
 	dv6_swap = SWAP256(v6);\
 	dv7_swap = SWAP256(v7);\
 	dv8_swap = SWAP256(v8);
+
+#define MINMAX16x2(m1, m2, v1, v2) \
+	t1 = _mm512_mask_max_epu16(v1, m1, v1, dv1_swap);		\
+	t2 = _mm512_mask_max_epu16(v2, m1, v2, dv2_swap);     \
+	v1 = _mm512_mask_min_epu16(t1, m2, v1, dv1_swap);     \
+	v2 = _mm512_mask_min_epu16(t2, m2, v2, dv2_swap);
+	
+#define MINMAX16x2_alt1(m1, m2, v1, v2) \
+	t1 = _mm512_mask_max_epu16(v1, m1, v1, dv1_swap);		\
+	t2 = _mm512_mask_min_epu16(v2, m1, v2, dv2_swap);     \
+	v1 = _mm512_mask_min_epu16(t1, m2, v1, dv1_swap);     \
+	v2 = _mm512_mask_max_epu16(t2, m2, v2, dv2_swap);
+	
+#define MINMAX16x2_alt2(m1, m2, v1, v2) \
+	t1 = _mm512_mask_max_epu16(v1, m1, v1, dv1_swap);		\
+	t2 = _mm512_mask_max_epu16(v2, m1, v2, dv2_swap);     \
+	v1 = _mm512_mask_min_epu16(t1, m2, v1, dv1_swap);     \
+	v2 = _mm512_mask_min_epu16(t2, m2, v2, dv2_swap);
+	
+#define MINMAX16x4(m1, m2, v1, v2, v3, v4) \
+	t1 = _mm512_mask_max_epu16(v1, m1, v1, dv1_swap);		\
+	t2 = _mm512_mask_max_epu16(v2, m1, v2, dv2_swap);     \
+	t3 = _mm512_mask_max_epu16(v3, m1, v3, dv3_swap);     \
+	t4 = _mm512_mask_max_epu16(v4, m1, v4, dv4_swap);     \
+	v1 = _mm512_mask_min_epu16(t1, m2, v1, dv1_swap);     \
+	v2 = _mm512_mask_min_epu16(t2, m2, v2, dv2_swap);     \
+	v3 = _mm512_mask_min_epu16(t3, m2, v3, dv3_swap);     \
+	v4 = _mm512_mask_min_epu16(t4, m2, v4, dv4_swap);
+	
+#define MINMAX16x4_alt1(m1, m2, v1, v2, v3, v4) \
+	t1 = _mm512_mask_max_epu16(v1, m1, v1, dv1_swap);		\
+	t2 = _mm512_mask_min_epu16(v2, m1, v2, dv2_swap);     \
+	t3 = _mm512_mask_max_epu16(v3, m1, v3, dv3_swap);     \
+	t4 = _mm512_mask_min_epu16(v4, m1, v4, dv4_swap);     \
+	v1 = _mm512_mask_min_epu16(t1, m2, v1, dv1_swap);     \
+	v2 = _mm512_mask_max_epu16(t2, m2, v2, dv2_swap);     \
+	v3 = _mm512_mask_min_epu16(t3, m2, v3, dv3_swap);     \
+	v4 = _mm512_mask_max_epu16(t4, m2, v4, dv4_swap);
+	
+#define MINMAX16x4_alt2(m1, m2, v1, v2, v3, v4) \
+	t1 = _mm512_mask_max_epu16(v1, m1, v1, dv1_swap);		\
+	t2 = _mm512_mask_max_epu16(v2, m1, v2, dv2_swap);     \
+	t3 = _mm512_mask_min_epu16(v3, m1, v3, dv3_swap);     \
+	t4 = _mm512_mask_min_epu16(v4, m1, v4, dv4_swap);     \
+	v1 = _mm512_mask_min_epu16(t1, m2, v1, dv1_swap);     \
+	v2 = _mm512_mask_min_epu16(t2, m2, v2, dv2_swap);     \
+	v3 = _mm512_mask_max_epu16(t3, m2, v3, dv3_swap);     \
+	v4 = _mm512_mask_max_epu16(t4, m2, v4, dv4_swap);
+	
+#define MINMAX16x8(m1, m2, v1, v2, v3, v4, v5, v6, v7, v8) \
+	t1 = _mm512_mask_max_epu16(v1, m1, v1, dv1_swap);		\
+	t2 = _mm512_mask_max_epu16(v2, m1, v2, dv2_swap);     \
+	t3 = _mm512_mask_max_epu16(v3, m1, v3, dv3_swap);     \
+	t4 = _mm512_mask_max_epu16(v4, m1, v4, dv4_swap);     \
+	t5 = _mm512_mask_max_epu16(v5, m1, v5, dv5_swap);     \
+	t6 = _mm512_mask_max_epu16(v6, m1, v6, dv6_swap);     \
+	t7 = _mm512_mask_max_epu16(v7, m1, v7, dv7_swap);     \
+	t8 = _mm512_mask_max_epu16(v8, m1, v8, dv8_swap);     \
+	v1 = _mm512_mask_min_epu16(t1, m2, v1, dv1_swap);     \
+	v2 = _mm512_mask_min_epu16(t2, m2, v2, dv2_swap);     \
+	v3 = _mm512_mask_min_epu16(t3, m2, v3, dv3_swap);     \
+	v4 = _mm512_mask_min_epu16(t4, m2, v4, dv4_swap);     \
+	v5 = _mm512_mask_min_epu16(t5, m2, v5, dv5_swap);     \
+	v6 = _mm512_mask_min_epu16(t6, m2, v6, dv6_swap);     \
+	v7 = _mm512_mask_min_epu16(t7, m2, v7, dv7_swap);     \
+	v8 = _mm512_mask_min_epu16(t8, m2, v8, dv8_swap); 
+	
+#define MINMAX16x8_alt1(m1, m2, v1, v2, v3, v4, v5, v6, v7, v8) \
+	t1 = _mm512_mask_max_epu16(v1, m1, v1, dv1_swap);		\
+	t2 = _mm512_mask_min_epu16(v2, m1, v2, dv2_swap);     \
+	t3 = _mm512_mask_max_epu16(v3, m1, v3, dv3_swap);     \
+	t4 = _mm512_mask_min_epu16(v4, m1, v4, dv4_swap);     \
+	t5 = _mm512_mask_max_epu16(v5, m1, v5, dv5_swap);     \
+	t6 = _mm512_mask_min_epu16(v6, m1, v6, dv6_swap);     \
+	t7 = _mm512_mask_max_epu16(v7, m1, v7, dv7_swap);     \
+	t8 = _mm512_mask_min_epu16(v8, m1, v8, dv8_swap);     \
+	v1 = _mm512_mask_min_epu16(t1, m2, v1, dv1_swap);     \
+	v2 = _mm512_mask_max_epu16(t2, m2, v2, dv2_swap);     \
+	v3 = _mm512_mask_min_epu16(t3, m2, v3, dv3_swap);     \
+	v4 = _mm512_mask_max_epu16(t4, m2, v4, dv4_swap);     \
+	v5 = _mm512_mask_min_epu16(t5, m2, v5, dv5_swap);     \
+	v6 = _mm512_mask_max_epu16(t6, m2, v6, dv6_swap);     \
+	v7 = _mm512_mask_min_epu16(t7, m2, v7, dv7_swap);     \
+	v8 = _mm512_mask_max_epu16(t8, m2, v8, dv8_swap); 
+	
+#define MINMAX16x8_alt2(m1, m2, v1, v2, v3, v4, v5, v6, v7, v8) \
+	t1 = _mm512_mask_max_epu16(v1, m1, v1, dv1_swap);		\
+	t2 = _mm512_mask_max_epu16(v2, m1, v2, dv2_swap);     \
+	t3 = _mm512_mask_min_epu16(v3, m1, v3, dv3_swap);     \
+	t4 = _mm512_mask_min_epu16(v4, m1, v4, dv4_swap);     \
+	t5 = _mm512_mask_max_epu16(v5, m1, v5, dv5_swap);     \
+	t6 = _mm512_mask_max_epu16(v6, m1, v6, dv6_swap);     \
+	t7 = _mm512_mask_min_epu16(v7, m1, v7, dv7_swap);     \
+	t8 = _mm512_mask_min_epu16(v8, m1, v8, dv8_swap);     \
+	v1 = _mm512_mask_min_epu16(t1, m2, v1, dv1_swap);     \
+	v2 = _mm512_mask_min_epu16(t2, m2, v2, dv2_swap);     \
+	v3 = _mm512_mask_max_epu16(t3, m2, v3, dv3_swap);     \
+	v4 = _mm512_mask_max_epu16(t4, m2, v4, dv4_swap);     \
+	v5 = _mm512_mask_min_epu16(t5, m2, v5, dv5_swap);     \
+	v6 = _mm512_mask_min_epu16(t6, m2, v6, dv6_swap);     \
+	v7 = _mm512_mask_max_epu16(t7, m2, v7, dv7_swap);     \
+	v8 = _mm512_mask_max_epu16(t8, m2, v8, dv8_swap); 
+	
+#define MINMAX16x8_alt4(m1, m2, v1, v2, v3, v4, v5, v6, v7, v8) \
+	t1 = _mm512_mask_max_epu16(v1, m1, v1, dv1_swap);		\
+	t2 = _mm512_mask_max_epu16(v2, m1, v2, dv2_swap);     \
+	t3 = _mm512_mask_max_epu16(v3, m1, v3, dv3_swap);     \
+	t4 = _mm512_mask_max_epu16(v4, m1, v4, dv4_swap);     \
+	t5 = _mm512_mask_min_epu16(v5, m1, v5, dv5_swap);     \
+	t6 = _mm512_mask_min_epu16(v6, m1, v6, dv6_swap);     \
+	t7 = _mm512_mask_min_epu16(v7, m1, v7, dv7_swap);     \
+	t8 = _mm512_mask_min_epu16(v8, m1, v8, dv8_swap);     \
+	v1 = _mm512_mask_min_epu16(t1, m2, v1, dv1_swap);     \
+	v2 = _mm512_mask_min_epu16(t2, m2, v2, dv2_swap);     \
+	v3 = _mm512_mask_min_epu16(t3, m2, v3, dv3_swap);     \
+	v4 = _mm512_mask_min_epu16(t4, m2, v4, dv4_swap);     \
+	v5 = _mm512_mask_max_epu16(t5, m2, v5, dv5_swap);     \
+	v6 = _mm512_mask_max_epu16(t6, m2, v6, dv6_swap);     \
+	v7 = _mm512_mask_max_epu16(t7, m2, v7, dv7_swap);     \
+	v8 = _mm512_mask_max_epu16(t8, m2, v8, dv8_swap); 
 	
 #define CMPGT(v1, v2, v3, v4, v5, v6, v7, v8) \
 	m1 = _mm512_cmpgt_epu32_mask(v1, dv1_swap);  \
@@ -316,6 +573,36 @@ static __m512i swap16bit_idx;
 	v7 = _mm512_mask_blend_epi32(m7 ^ (M), v7, dv7_swap);  \
 	v8 = _mm512_mask_blend_epi32(m8 ^ (M), v8, dv8_swap);
 
+#define MINMAX32x4(m1, m2, v1, v2, v3, v4) \
+	t1 = _mm512_mask_max_epu32(v1, m1, v1, dv1_swap);		\
+	t2 = _mm512_mask_max_epu32(v2, m1, v2, dv2_swap);     \
+	t3 = _mm512_mask_max_epu32(v3, m1, v3, dv3_swap);     \
+	t4 = _mm512_mask_max_epu32(v4, m1, v4, dv4_swap);     \
+	v1 = _mm512_mask_min_epu32(t1, m2, v1, dv1_swap);     \
+	v2 = _mm512_mask_min_epu32(t2, m2, v2, dv2_swap);     \
+	v3 = _mm512_mask_min_epu32(t3, m2, v3, dv3_swap);     \
+	v4 = _mm512_mask_min_epu32(t4, m2, v4, dv4_swap);
+	
+#define MINMAX32x4_alt1(m1, m2, v1, v2, v3, v4) \
+	t1 = _mm512_mask_max_epu32(v1, m1, v1, dv1_swap);		\
+	t2 = _mm512_mask_min_epu32(v2, m1, v2, dv2_swap);     \
+	t3 = _mm512_mask_max_epu32(v3, m1, v3, dv3_swap);     \
+	t4 = _mm512_mask_min_epu32(v4, m1, v4, dv4_swap);     \
+	v1 = _mm512_mask_min_epu32(t1, m2, v1, dv1_swap);     \
+	v2 = _mm512_mask_max_epu32(t2, m2, v2, dv2_swap);     \
+	v3 = _mm512_mask_min_epu32(t3, m2, v3, dv3_swap);     \
+	v4 = _mm512_mask_max_epu32(t4, m2, v4, dv4_swap);
+	
+#define MINMAX32x4_alt2(m1, m2, v1, v2, v3, v4) \
+	t1 = _mm512_mask_max_epu32(v1, m1, v1, dv1_swap);		\
+	t2 = _mm512_mask_max_epu32(v2, m1, v2, dv2_swap);     \
+	t3 = _mm512_mask_min_epu32(v3, m1, v3, dv3_swap);     \
+	t4 = _mm512_mask_min_epu32(v4, m1, v4, dv4_swap);     \
+	v1 = _mm512_mask_min_epu32(t1, m2, v1, dv1_swap);     \
+	v2 = _mm512_mask_min_epu32(t2, m2, v2, dv2_swap);     \
+	v3 = _mm512_mask_max_epu32(t3, m2, v3, dv3_swap);     \
+	v4 = _mm512_mask_max_epu32(t4, m2, v4, dv4_swap);
+	
 #define MINMAX(m1, m2, v1, v2, v3, v4, v5, v6, v7, v8) \
 	t1 = _mm512_mask_max_epu32(v1, m1, v1, dv1_swap);		\
 	t2 = _mm512_mask_max_epu32(v2, m1, v2, dv2_swap);     \
@@ -501,6 +788,13 @@ static __m512i swap16bit_idx;
 	v8 = _mm512_mask_max_epu64(t8, m2, v8, dv8_swap); 
 
 
+#if !defined(__clang__)
+#define _mm512_storeu_epi32 _mm512_store_epi32
+#define _mm512_loadu_epi32 _mm512_load_epi32
+#define _mm512_storeu_epi64 _mm512_store_epi64
+#define _mm512_loadu_epi64 _mm512_load_epi64
+#endif
+
 void print128(__m512i i1, __m512i i2, __m512i i3, __m512i i4,
 	__m512i i5, __m512i i6, __m512i i7, __m512i i8)
 {
@@ -564,6 +858,1352 @@ void print128(__m512i i1, __m512i i2, __m512i i3, __m512i i4,
 	printf("\n");
 }
 
+void bitonic_merge16_dir_64(uint16_t* data, int dir) 
+{
+	// merge 64 16-bit elements
+	__m512i t1;
+	__m512i t2;
+	__m512i dv1;
+	__m512i dv2;
+	__m512i dv1_swap;
+	__m512i dv2_swap;
+
+	dv1 = _mm512_load_si512(data);
+	dv2 = _mm512_load_si512(data + 32);
+
+	// phase 5: merge (all same compare 'dir')
+	if (dir == 1)
+	{
+		// distance 32 swaps
+		t1 =  _mm512_max_epu16(dv1, dv2);
+		dv2 = _mm512_min_epu16(dv1, dv2);
+		dv1 = t1;
+		
+		// distance 16 swaps
+		SWAP256x2(dv1, dv2);
+		MINMAX16x2(0x0000ffff, 0xFFff0000, dv1, dv2);
+		
+		// distance 8 swaps
+		SWAP128x2(dv1, dv2);
+		MINMAX16x2(0x00ff00ff, 0xFF00ff00, dv1, dv2);
+
+		// distance 4 swaps
+		SWAP64x2(dv1, dv2);
+		MINMAX16x2(0x0f0f0f0f, 0xF0F0f0f0, dv1, dv2);
+
+		// distance 2 swaps
+		SWAP32x2(dv1, dv2);
+		MINMAX16x2(0x33333333, 0xCCCCcccc, dv1, dv2);
+
+		// adjacent swaps
+		SWAP16x2(dv1, dv2);
+		MINMAX16x2(0x55555555, 0xAAAAaaaa, dv1, dv2);
+
+	}
+	else
+	{	
+		// distance 32 swaps
+		t1 =  _mm512_min_epu16(dv1, dv2);
+		dv2 = _mm512_max_epu16(dv1, dv2);
+		dv1 = t1;
+		
+		// distance 16 swaps
+		SWAP256x2(dv1, dv2);
+		MINMAX16x2(0xFFff0000, 0x0000ffff, dv1, dv2);
+		
+		// distance 8 swaps
+		SWAP128x2(dv1, dv2);
+		MINMAX16x2(0xFF00ff00, 0x00ff00ff, dv1, dv2);
+
+		// distance 4 swaps
+		SWAP64x2(dv1, dv2);
+		MINMAX16x2(0xF0F0f0f0, 0x0f0f0f0f, dv1, dv2);
+
+		// distance 2 swaps
+		SWAP32x2(dv1, dv2);
+		MINMAX16x2(0xCCCCcccc, 0x33333333, dv1, dv2);
+
+		// adjacent swaps
+		SWAP16x2(dv1, dv2);
+		MINMAX16x2(0xAAAAaaaa, 0x55555555, dv1, dv2);
+
+	}
+
+	_mm512_store_si512(data, dv1);
+	_mm512_store_si512(data + 32, dv2);
+	
+	return;
+}
+
+void bitonic_sort16_dir_64(uint16_t* data, int dir) 
+{
+	// sort 128 16-bit elements
+	__m512i t1;
+	__m512i t2;
+	__m512i dv1;
+	__m512i dv2;
+	__m512i dv1_swap;
+	__m512i dv2_swap;
+
+	dv1 = _mm512_load_si512(data);
+	dv2 = _mm512_load_si512(data + 32);
+
+	// phase 0: dist-2 alternating compares ('CC')
+
+	// adjacent swaps (AA)
+	SWAP16x2(dv1, dv2);
+	MINMAX16x2(0x66666666, 0x99999999, dv1, dv2);
+	
+	// phase 1: dist-4 alternating compares ('F0')
+	
+	// distance 2 swaps (CC)
+	SWAP32x2(dv1, dv2);
+	MINMAX16x2(0x3C3C3C3C, 0xC3C3C3C3, dv1, dv2)
+
+	// adjacent swaps (AA)
+	SWAP16x2(dv1, dv2);
+	MINMAX16x2(0x5A5A5A5A, 0xA5A5A5A5, dv1, dv2);
+
+	// phase 2: dist-8 alternating compares ('FF00')
+
+	// distance 4 swaps (F0F0)
+	SWAP64x2(dv1, dv2);
+	MINMAX16x2(0x0FF00FF0, 0xf00ff00f, dv1, dv2);
+
+	// distance 2 swaps (CC)
+	SWAP32x2(dv1, dv2);
+	MINMAX16x2(0x33CC33CC, 0xcc33cc33, dv1, dv2);
+
+	// adjacent swaps (AA)
+	SWAP16x2(dv1, dv2);
+	MINMAX16x2(0x55AA55AA, 0xaa55aa55, dv1, dv2);
+
+	// phase 2: dist-16 alternating compares ('FFFF0000')
+	
+	// distance 8 swaps (FF00FF00)
+	SWAP128x2(dv1, dv2);
+	MINMAX16x2(0x00FFFF00, 0xFF0000FF, dv1, dv2);
+
+	// distance 4 swaps (F0F0)
+	SWAP64x2(dv1, dv2);
+	MINMAX16x2(0x0F0FF0F0, 0xf0f00f0f, dv1, dv2);
+
+	// distance 2 swaps (CC)
+	SWAP32x2(dv1, dv2);
+	MINMAX16x2(0x3333CCCC, 0xCCCC3333, dv1, dv2);
+
+	// adjacent swaps (AA)
+	SWAP16x2(dv1, dv2);
+	MINMAX16x2(0x5555AAAA, 0xaaaa5555, dv1, dv2);
+
+	// phase 3: dist-32 alternating compares (alternating gt/lt)
+
+	// distance 16 swaps
+	SWAP256x2(dv1, dv2);
+	MINMAX16x2_alt1(0xFFff0000, 0x0000ffff, dv1, dv2);
+	
+	// distance 8 swaps
+	SWAP128x2(dv1, dv2);
+	MINMAX16x2_alt1(0xFF00ff00, 0x00ff00ff, dv1, dv2);
+
+	// distance 4 swaps
+	SWAP64x2(dv1, dv2);
+	MINMAX16x2_alt1(0xF0F0f0f0, 0x0f0f0f0f, dv1, dv2);
+
+	// distance 2 swaps
+	SWAP32x2(dv1, dv2);
+	MINMAX16x2_alt1(0xCCCCcccc, 0x33333333, dv1, dv2);
+
+	// adjacent swaps
+	SWAP16x2(dv1, dv2);
+	MINMAX16x2_alt1(0xAAAAaaaa, 0x55555555, dv1, dv2);
+
+	// phase 5: merge (all same compare 'dir')
+	if (dir == 1)
+	{
+		// distance 32 swaps
+		t1 =  _mm512_max_epu16(dv1, dv2);
+		dv2 = _mm512_min_epu16(dv1, dv2);
+		dv1 = t1;
+		
+		// distance 16 swaps
+		SWAP256x2(dv1, dv2);
+		MINMAX16x2(0x0000ffff, 0xFFff0000, dv1, dv2);
+		
+		// distance 8 swaps
+		SWAP128x2(dv1, dv2);
+		MINMAX16x2(0x00ff00ff, 0xFF00ff00, dv1, dv2);
+
+		// distance 4 swaps
+		SWAP64x2(dv1, dv2);
+		MINMAX16x2(0x0f0f0f0f, 0xF0F0f0f0, dv1, dv2);
+
+		// distance 2 swaps
+		SWAP32x2(dv1, dv2);
+		MINMAX16x2(0x33333333, 0xCCCCcccc, dv1, dv2);
+
+		// adjacent swaps
+		SWAP16x2(dv1, dv2);
+		MINMAX16x2(0x55555555, 0xAAAAaaaa, dv1, dv2);
+	}
+	else
+	{	
+		// distance 32 swaps
+		t1 =  _mm512_min_epu16(dv1, dv2);
+		dv2 = _mm512_max_epu16(dv1, dv2);
+		dv1 = t1;
+		
+		// distance 16 swaps
+		SWAP256x2(dv1, dv2);
+		MINMAX16x2(0xFFff0000, 0x0000ffff, dv1, dv2);
+		
+		// distance 8 swaps
+		SWAP128x2(dv1, dv2);
+		MINMAX16x2(0xFF00ff00, 0x00ff00ff, dv1, dv2);
+
+		// distance 4 swaps
+		SWAP64x2(dv1, dv2);
+		MINMAX16x2(0xF0F0f0f0, 0x0f0f0f0f, dv1, dv2);
+
+		// distance 2 swaps
+		SWAP32x2(dv1, dv2);
+		MINMAX16x2(0xCCCCcccc, 0x33333333, dv1, dv2);
+
+		// adjacent swaps
+		SWAP16x2(dv1, dv2);
+		MINMAX16x2(0xAAAAaaaa, 0x55555555, dv1, dv2);
+	}
+
+	_mm512_store_si512(data, dv1);
+	_mm512_store_si512(data + 32, dv2);
+	
+	return;
+}
+
+void bitonic_merge16_dir_128(uint16_t* data, int dir) 
+{
+	// merge 128 16-bit elements
+	__m512i t1;
+	__m512i t2;
+	__m512i t3;
+	__m512i t4;
+	__m512i dv1;
+	__m512i dv2;
+	__m512i dv3;
+	__m512i dv4;
+	__m512i dv1_swap;
+	__m512i dv2_swap;
+	__m512i dv3_swap;
+	__m512i dv4_swap;
+
+	dv1 = _mm512_load_si512(data);
+	dv2 = _mm512_load_si512(data + 32);
+	dv3 = _mm512_load_si512(data + 64);
+	dv4 = _mm512_load_si512(data + 96);
+
+	// phase 5: merge (all same compare 'dir')
+	if (dir == 1)
+	{
+		// dist-64 swaps
+		t1 =  _mm512_max_epu16(dv1, dv3);
+		t2 =  _mm512_max_epu16(dv2, dv4);
+		dv3 = _mm512_min_epu16(dv1, dv3);
+		dv4 = _mm512_min_epu16(dv2, dv4);
+		dv1 = t1;
+		dv2 = t2;
+		
+		// distance 32 swaps
+		t1 =  _mm512_max_epu16(dv1, dv2);
+		t2 =  _mm512_max_epu16(dv3, dv4);
+		dv2 = _mm512_min_epu16(dv1, dv2);
+		dv4 = _mm512_min_epu16(dv3, dv4);
+		dv1 = t1;
+		dv3 = t2;
+		
+		// distance 16 swaps
+		SWAP256x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0x0000ffff, 0xFFff0000, dv1, dv2, dv3, dv4);
+		
+		// distance 8 swaps
+		SWAP128x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0x00ff00ff, 0xFF00ff00, dv1, dv2, dv3, dv4);
+
+		// distance 4 swaps
+		SWAP64x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0x0f0f0f0f, 0xF0F0f0f0, dv1, dv2, dv3, dv4);
+
+		// distance 2 swaps
+		SWAP32x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0x33333333, 0xCCCCcccc, dv1, dv2, dv3, dv4);
+
+		// adjacent swaps
+		SWAP16x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0x55555555, 0xAAAAaaaa, dv1, dv2, dv3, dv4);
+
+	}
+	else
+	{	
+		// dist-64 swaps
+		t1 =  _mm512_min_epu16(dv1, dv3);
+		t2 =  _mm512_min_epu16(dv2, dv4);
+		dv3 = _mm512_max_epu16(dv1, dv3);
+		dv4 = _mm512_max_epu16(dv2, dv4);
+		dv1 = t1;
+		dv2 = t2;
+		
+		// distance 32 swaps
+		t1 =  _mm512_min_epu16(dv1, dv2);
+		t2 =  _mm512_min_epu16(dv3, dv4);
+		dv2 = _mm512_max_epu16(dv1, dv2);
+		dv4 = _mm512_max_epu16(dv3, dv4);
+		dv1 = t1;
+		dv3 = t2;
+		
+		// distance 16 swaps
+		SWAP256x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0xFFff0000, 0x0000ffff, dv1, dv2, dv3, dv4);
+		
+		// distance 8 swaps
+		SWAP128x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0xFF00ff00, 0x00ff00ff, dv1, dv2, dv3, dv4);
+
+		// distance 4 swaps
+		SWAP64x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0xF0F0f0f0, 0x0f0f0f0f, dv1, dv2, dv3, dv4);
+
+		// distance 2 swaps
+		SWAP32x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0xCCCCcccc, 0x33333333, dv1, dv2, dv3, dv4);
+
+		// adjacent swaps
+		SWAP16x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0xAAAAaaaa, 0x55555555, dv1, dv2, dv3, dv4);
+
+	}
+
+	_mm512_store_si512(data, dv1);
+	_mm512_store_si512(data + 32, dv2);
+	_mm512_store_si512(data + 64, dv3);
+	_mm512_store_si512(data + 96, dv4);
+	
+	return;
+}
+
+void bitonic_sort16_dir_128(uint16_t* data, int dir) 
+{
+	// sort 128 16-bit elements
+	__m512i t1;
+	__m512i t2;
+	__m512i t3;
+	__m512i t4;
+	__m512i dv1;
+	__m512i dv2;
+	__m512i dv3;
+	__m512i dv4;
+	__m512i dv1_swap;
+	__m512i dv2_swap;
+	__m512i dv3_swap;
+	__m512i dv4_swap;
+
+	dv1 = _mm512_load_si512(data);
+	dv2 = _mm512_load_si512(data + 32);
+	dv3 = _mm512_load_si512(data + 64);
+	dv4 = _mm512_load_si512(data + 96);
+
+	// phase 0: dist-2 alternating compares ('CC')
+
+	// adjacent swaps (AA)
+	SWAP16x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4(0x66666666, 0x99999999, dv1, dv2, dv3, dv4);
+	
+	// phase 1: dist-4 alternating compares ('F0')
+	
+	// distance 2 swaps (CC)
+	SWAP32x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4(0x3C3C3C3C, 0xC3C3C3C3, dv1, dv2, dv3, dv4)
+
+	// adjacent swaps (AA)
+	SWAP16x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4(0x5A5A5A5A, 0xA5A5A5A5, dv1, dv2, dv3, dv4);
+
+	// phase 2: dist-8 alternating compares ('FF00')
+
+	// distance 4 swaps (F0F0)
+	SWAP64x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4(0x0FF00FF0, 0xf00ff00f, dv1, dv2, dv3, dv4);
+
+	// distance 2 swaps (CC)
+	SWAP32x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4(0x33CC33CC, 0xcc33cc33, dv1, dv2, dv3, dv4);
+
+	// adjacent swaps (AA)
+	SWAP16x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4(0x55AA55AA, 0xaa55aa55, dv1, dv2, dv3, dv4);
+
+	// phase 2: dist-16 alternating compares ('FFFF0000')
+	
+	// distance 8 swaps (FF00FF00)
+	SWAP128x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4(0x00FFFF00, 0xFF0000FF, dv1, dv2, dv3, dv4);
+
+	// distance 4 swaps (F0F0)
+	SWAP64x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4(0x0F0FF0F0, 0xf0f00f0f, dv1, dv2, dv3, dv4);
+
+	// distance 2 swaps (CC)
+	SWAP32x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4(0x3333CCCC, 0xCCCC3333, dv1, dv2, dv3, dv4);
+
+	// adjacent swaps (AA)
+	SWAP16x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4(0x5555AAAA, 0xaaaa5555, dv1, dv2, dv3, dv4);
+
+	// phase 3: dist-32 alternating compares (alternating gt/lt)
+
+	// distance 16 swaps
+	SWAP256x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4_alt1(0xFFff0000, 0x0000ffff, dv1, dv2, dv3, dv4);
+	
+	// distance 8 swaps
+	SWAP128x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4_alt1(0xFF00ff00, 0x00ff00ff, dv1, dv2, dv3, dv4);
+
+	// distance 4 swaps
+	SWAP64x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4_alt1(0xF0F0f0f0, 0x0f0f0f0f, dv1, dv2, dv3, dv4);
+
+	// distance 2 swaps
+	SWAP32x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4_alt1(0xCCCCcccc, 0x33333333, dv1, dv2, dv3, dv4);
+
+	// adjacent swaps
+	SWAP16x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4_alt1(0xAAAAaaaa, 0x55555555, dv1, dv2, dv3, dv4);
+	
+	// phase 4: dist-64 alternating compares (alternating gtgt/ltlt)
+
+	// distance 32 swaps - just compare the vecs
+	t1 =  _mm512_min_epu16(dv1, dv2);
+	t2 =  _mm512_max_epu16(dv3, dv4);
+	dv2 = _mm512_max_epu16(dv1, dv2);
+	dv4 = _mm512_min_epu16(dv3, dv4);
+	dv1 = t1;
+	dv3 = t2;
+	
+	// distance 16 swaps
+	SWAP256x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4_alt2(0xFFff0000, 0x0000ffff, dv1, dv2, dv3, dv4);
+	
+	// distance 8 swaps
+	SWAP128x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4_alt2(0xFF00ff00, 0x00ff00ff, dv1, dv2, dv3, dv4);
+
+	// distance 4 swaps
+	SWAP64x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4_alt2(0xF0F0f0f0, 0x0f0f0f0f, dv1, dv2, dv3, dv4);
+
+	// distance 2 swaps
+	SWAP32x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4_alt2(0xCCCCcccc, 0x33333333, dv1, dv2, dv3, dv4);
+
+	// adjacent swaps
+	SWAP16x4(dv1, dv2, dv3, dv4);
+	MINMAX16x4_alt2(0xAAAAaaaa, 0x55555555, dv1, dv2, dv3, dv4);
+
+
+	// phase 5: merge (all same compare 'dir')
+	if (dir == 1)
+	{
+		// dist-64 swaps
+		t1 =  _mm512_max_epu16(dv1, dv3);
+		t2 =  _mm512_max_epu16(dv2, dv4);
+		dv3 = _mm512_min_epu16(dv1, dv3);
+		dv4 = _mm512_min_epu16(dv2, dv4);
+		dv1 = t1;
+		dv2 = t2;
+		
+		// distance 32 swaps
+		t1 =  _mm512_max_epu16(dv1, dv2);
+		t2 =  _mm512_max_epu16(dv3, dv4);
+		dv2 = _mm512_min_epu16(dv1, dv2);
+		dv4 = _mm512_min_epu16(dv3, dv4);
+		dv1 = t1;
+		dv3 = t2;
+		
+		// distance 16 swaps
+		SWAP256x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0x0000ffff, 0xFFff0000, dv1, dv2, dv3, dv4);
+		
+		// distance 8 swaps
+		SWAP128x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0x00ff00ff, 0xFF00ff00, dv1, dv2, dv3, dv4);
+
+		// distance 4 swaps
+		SWAP64x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0x0f0f0f0f, 0xF0F0f0f0, dv1, dv2, dv3, dv4);
+
+		// distance 2 swaps
+		SWAP32x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0x33333333, 0xCCCCcccc, dv1, dv2, dv3, dv4);
+
+		// adjacent swaps
+		SWAP16x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0x55555555, 0xAAAAaaaa, dv1, dv2, dv3, dv4);
+
+	}
+	else
+	{	
+		// dist-64 swaps
+		t1 =  _mm512_min_epu16(dv1, dv3);
+		t2 =  _mm512_min_epu16(dv2, dv4);
+		dv3 = _mm512_max_epu16(dv1, dv3);
+		dv4 = _mm512_max_epu16(dv2, dv4);
+		dv1 = t1;
+		dv2 = t2;
+		
+		// distance 32 swaps
+		t1 =  _mm512_min_epu16(dv1, dv2);
+		t2 =  _mm512_min_epu16(dv3, dv4);
+		dv2 = _mm512_max_epu16(dv1, dv2);
+		dv4 = _mm512_max_epu16(dv3, dv4);
+		dv1 = t1;
+		dv3 = t2;
+		
+		// distance 16 swaps
+		SWAP256x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0xFFff0000, 0x0000ffff, dv1, dv2, dv3, dv4);
+		
+		// distance 8 swaps
+		SWAP128x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0xFF00ff00, 0x00ff00ff, dv1, dv2, dv3, dv4);
+
+		// distance 4 swaps
+		SWAP64x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0xF0F0f0f0, 0x0f0f0f0f, dv1, dv2, dv3, dv4);
+
+		// distance 2 swaps
+		SWAP32x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0xCCCCcccc, 0x33333333, dv1, dv2, dv3, dv4);
+
+		// adjacent swaps
+		SWAP16x4(dv1, dv2, dv3, dv4);
+		MINMAX16x4(0xAAAAaaaa, 0x55555555, dv1, dv2, dv3, dv4);
+
+	}
+
+	_mm512_store_si512(data, dv1);
+	_mm512_store_si512(data + 32, dv2);
+	_mm512_store_si512(data + 64, dv3);
+	_mm512_store_si512(data + 96, dv4);
+	
+	return;
+}
+
+void bitonic_merge16_dir_256(uint16_t* data, int dir) 
+{
+	// merge phase: 256 16-bit elements
+	int i, j;
+
+	__m512i t1;
+	__m512i t2;
+	__m512i t3;
+	__m512i t4;
+	__m512i t5;
+	__m512i t6;
+	__m512i t7;
+	__m512i t8;
+	__m512i dv1;
+	__m512i dv2;
+	__m512i dv3;
+	__m512i dv4;
+	__m512i dv5;
+	__m512i dv6;
+	__m512i dv7;
+	__m512i dv8;
+	__m512i dv1_swap;
+	__m512i dv2_swap;
+	__m512i dv3_swap;
+	__m512i dv4_swap;
+	__m512i dv5_swap;
+	__m512i dv6_swap;
+	__m512i dv7_swap;
+	__m512i dv8_swap;
+	__mmask32 m1;
+	__mmask32 m2;
+	__mmask32 m3;
+	__mmask32 m4;
+	__mmask32 m5;
+	__mmask32 m6;
+	__mmask32 m7;
+	__mmask32 m8;
+
+	dv1 = _mm512_load_si512(data);
+	dv2 = _mm512_load_si512(data + 32);
+	dv3 = _mm512_load_si512(data + 64);
+	dv4 = _mm512_load_si512(data + 96);
+	dv5 = _mm512_load_si512(data + 128);
+	dv6 = _mm512_load_si512(data + 160);
+	dv7 = _mm512_load_si512(data + 192);
+	dv8 = _mm512_load_si512(data + 224);
+
+	// phase 6: merge (all same compare 'dir')
+	if (dir == 1)
+	{
+		// distance 128 swaps - just compare the vecs
+		t1 =  _mm512_max_epu16(dv1, dv5);
+		t2 =  _mm512_max_epu16(dv2, dv6);
+		t3 =  _mm512_max_epu16(dv3, dv7);
+		t4 =  _mm512_max_epu16(dv4, dv8);
+		dv5 = _mm512_min_epu16(dv1, dv5);
+		dv6 = _mm512_min_epu16(dv2, dv6);
+		dv7 = _mm512_min_epu16(dv3, dv7);
+		dv8 = _mm512_min_epu16(dv4, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv3 = t3;
+		dv4 = t4;
+		
+		// distance 64 swaps - just compare the vecs
+		t1 =  _mm512_max_epu16(dv1, dv3);
+		t2 =  _mm512_max_epu16(dv2, dv4);
+		t3 =  _mm512_max_epu16(dv5, dv7);
+		t4 =  _mm512_max_epu16(dv6, dv8);
+		dv3 = _mm512_min_epu16(dv1, dv3);
+		dv4 = _mm512_min_epu16(dv2, dv4);
+		dv7 = _mm512_min_epu16(dv5, dv7);
+		dv8 = _mm512_min_epu16(dv6, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv5 = t3;
+		dv6 = t4;
+		
+		// distance 32 swaps - just compare the vecs
+		t1 =  _mm512_max_epu16(dv1, dv2);
+		t2 =  _mm512_max_epu16(dv3, dv4);
+		t3 =  _mm512_max_epu16(dv5, dv6);
+		t4 =  _mm512_max_epu16(dv7, dv8);
+		dv2 = _mm512_min_epu16(dv1, dv2);
+		dv4 = _mm512_min_epu16(dv3, dv4);
+		dv6 = _mm512_min_epu16(dv5, dv6);
+		dv8 = _mm512_min_epu16(dv7, dv8);
+		dv1 = t1;
+		dv3 = t2;
+		dv5 = t3;
+		dv7 = t4;
+
+		// distance 16 swaps
+		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0x0000ffff, 0xFFff0000, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		// distance 8 swaps
+		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0x00ff00ff, 0xFF00ff00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+		// distance 4 swaps
+		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0x0f0f0f0f, 0xF0F0f0f0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+		// distance 2 swaps
+		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0x33333333, 0xCCCCcccc, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+		// adjacent swaps
+		SWAP16x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0x55555555, 0xAAAAaaaa, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	}
+	else
+	{	
+		// distance 128 swaps - just compare the vecs
+		t1 =  _mm512_min_epu16(dv1, dv5);
+		t2 =  _mm512_min_epu16(dv2, dv6);
+		t3 =  _mm512_min_epu16(dv3, dv7);
+		t4 =  _mm512_min_epu16(dv4, dv8);
+		dv5 = _mm512_max_epu16(dv1, dv5);
+		dv6 = _mm512_max_epu16(dv2, dv6);
+		dv7 = _mm512_max_epu16(dv3, dv7);
+		dv8 = _mm512_max_epu16(dv4, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv3 = t3;
+		dv4 = t4;
+		
+		// distance 64 swaps - just compare the vecs
+		t1 =  _mm512_min_epu16(dv1, dv3);
+		t2 =  _mm512_min_epu16(dv2, dv4);
+		t3 =  _mm512_min_epu16(dv5, dv7);
+		t4 =  _mm512_min_epu16(dv6, dv8);
+		dv3 = _mm512_max_epu16(dv1, dv3);
+		dv4 = _mm512_max_epu16(dv2, dv4);
+		dv7 = _mm512_max_epu16(dv5, dv7);
+		dv8 = _mm512_max_epu16(dv6, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv5 = t3;
+		dv6 = t4;
+		
+		// distance 32 swaps - just compare the vecs
+		t1 =  _mm512_min_epu16(dv1, dv2);
+		t2 =  _mm512_min_epu16(dv3, dv4);
+		t3 =  _mm512_min_epu16(dv5, dv6);
+		t4 =  _mm512_min_epu16(dv7, dv8);
+		dv2 = _mm512_max_epu16(dv1, dv2);
+		dv4 = _mm512_max_epu16(dv3, dv4);
+		dv6 = _mm512_max_epu16(dv5, dv6);
+		dv8 = _mm512_max_epu16(dv7, dv8);
+		dv1 = t1;
+		dv3 = t2;
+		dv5 = t3;
+		dv7 = t4;
+		
+		// distance 16 swaps
+		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0xFFff0000, 0x0000ffff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		// distance 8 swaps
+		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0xFF00ff00, 0x00ff00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+		// distance 4 swaps
+		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0xF0F0f0f0, 0x0f0f0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+		// distance 2 swaps
+		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0xCCCCcccc, 0x33333333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+		// adjacent swaps
+		SWAP16x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0xAAAAaaaa, 0x55555555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	}
+
+	_mm512_store_si512(data + 0  , dv1);
+	_mm512_store_si512(data + 32 , dv2);
+	_mm512_store_si512(data + 64 , dv3);
+	_mm512_store_si512(data + 96 , dv4);
+	_mm512_store_si512(data + 128, dv5);
+	_mm512_store_si512(data + 160, dv6);
+	_mm512_store_si512(data + 192, dv7);
+	_mm512_store_si512(data + 224, dv8);
+	
+	return;
+}
+
+void bitonic_sort16_dir_256(uint16_t* data, int dir) 
+{
+	// sort 256 16-bit elements
+	__m512i t1;
+	__m512i t2;
+	__m512i t3;
+	__m512i t4;
+	__m512i t5;
+	__m512i t6;
+	__m512i t7;
+	__m512i t8;
+	__m512i dv1;
+	__m512i dv2;
+	__m512i dv3;
+	__m512i dv4;
+	__m512i dv5;
+	__m512i dv6;
+	__m512i dv7;
+	__m512i dv8;
+	__m512i dv1_swap;
+	__m512i dv2_swap;
+	__m512i dv3_swap;
+	__m512i dv4_swap;
+	__m512i dv5_swap;
+	__m512i dv6_swap;
+	__m512i dv7_swap;
+	__m512i dv8_swap;
+	__mmask32 m1;
+	__mmask32 m2;
+
+	dv1 = _mm512_load_si512(data);
+	dv2 = _mm512_load_si512(data + 32);
+	dv3 = _mm512_load_si512(data + 64);
+	dv4 = _mm512_load_si512(data + 96);
+	dv5 = _mm512_load_si512(data + 128);
+	dv6 = _mm512_load_si512(data + 160);
+	dv7 = _mm512_load_si512(data + 192);
+	dv8 = _mm512_load_si512(data + 224);
+
+	// phase 0: dist-2 alternating compares ('CC')
+	
+	// adjacent swaps
+	SWAP16x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8(0x66666666, 0x99999999, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	
+	// phase 1: dist-4 alternating compares ('F0')
+	
+	// distance 2 swaps
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8(0x3C3C3c3c, 0xC3C3c3c3, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8)
+
+	// adjacent swaps
+	SWAP16x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8(0x5A5A5a5a, 0xA5A5a5a5, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// phase 2: dist-8 alternating compares ('FF00')
+
+	// distance 4 swaps
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8(0x0FF00ff0, 0xf00ff00f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// distance 2 swaps
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8(0x33CC33cc, 0xcc33cc33, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// adjacent swaps
+	SWAP16x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8(0x55AA55aa, 0xaa55aa55, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// phase 3: dist-16 alternating compares
+	
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8(0x00FFFF00, 0xFF0000FF, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// distance 4 swaps (F0F0)
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8(0x0F0FF0F0, 0xf0f00f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// distance 2 swaps (CC)
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8(0x3333CCCC, 0xCCCC3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// adjacent swaps (AA)
+	SWAP16x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8(0x5555AAAA, 0xaaaa5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// phase 4: dist-32 alternating compares
+
+	// distance 16 swaps
+	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt1(0xFFff0000, 0x0000ffff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	
+	// distance 8 swaps
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt1(0xFF00ff00, 0x00ff00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// distance 4 swaps
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt1(0xF0F0f0f0, 0x0f0f0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// distance 2 swaps
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt1(0xCCCCcccc, 0x33333333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// adjacent swaps
+	SWAP16x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt1(0xAAAAaaaa, 0x55555555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	
+	// phase 5: dist-64 alternating compares
+
+	// distance 32 swaps - just compare the vecs
+	t1 =  _mm512_min_epu16(dv1, dv2);
+	t2 =  _mm512_max_epu16(dv3, dv4);
+	t3 =  _mm512_min_epu16(dv5, dv6);
+	t4 =  _mm512_max_epu16(dv7, dv8);
+	dv2 = _mm512_max_epu16(dv1, dv2);
+	dv4 = _mm512_min_epu16(dv3, dv4);
+	dv6 = _mm512_max_epu16(dv5, dv6);
+	dv8 = _mm512_min_epu16(dv7, dv8);
+	dv1 = t1;
+	dv3 = t2;
+	dv5 = t3;
+	dv7 = t4;
+	
+	// distance 16 swaps
+	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt2(0xFFff0000, 0x0000ffff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	
+	// distance 8 swaps
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt2(0xFF00ff00, 0x00ff00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// distance 4 swaps
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt2(0xF0F0f0f0, 0x0f0f0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// distance 2 swaps
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt2(0xCCCCcccc, 0x33333333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// adjacent swaps
+	SWAP16x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt2(0xAAAAaaaa, 0x55555555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	
+	// phase 6: dist-128 alternating compares
+
+	// distance 64 swaps - just compare the vecs
+	t1 =  _mm512_min_epu16(dv1, dv3);
+	t2 =  _mm512_min_epu16(dv2, dv4);
+	t3 =  _mm512_max_epu16(dv5, dv7);
+	t4 =  _mm512_max_epu16(dv6, dv8);
+	dv3 = _mm512_max_epu16(dv1, dv3);
+	dv4 = _mm512_max_epu16(dv2, dv4);
+	dv7 = _mm512_min_epu16(dv5, dv7);
+	dv8 = _mm512_min_epu16(dv6, dv8);
+	dv1 = t1;
+	dv2 = t2;
+	dv5 = t3;
+	dv6 = t4;
+	
+	// distance 32 swaps - just compare the vecs
+	t1 =  _mm512_min_epu16(dv1, dv2);
+	t2 =  _mm512_min_epu16(dv3, dv4);
+	t3 =  _mm512_max_epu16(dv5, dv6);
+	t4 =  _mm512_max_epu16(dv7, dv8);
+	dv2 = _mm512_max_epu16(dv1, dv2);
+	dv4 = _mm512_max_epu16(dv3, dv4);
+	dv6 = _mm512_min_epu16(dv5, dv6);
+	dv8 = _mm512_min_epu16(dv7, dv8);
+	dv1 = t1;
+	dv3 = t2;
+	dv5 = t3;
+	dv7 = t4;
+	
+	// distance 16 swaps
+	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt4(0xFFff0000, 0x0000ffff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	
+	// distance 8 swaps
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt4(0xFF00ff00, 0x00ff00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// distance 4 swaps
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt4(0xF0F0f0f0, 0x0f0f0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// distance 2 swaps
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt4(0xCCCCcccc, 0x33333333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// adjacent swaps
+	SWAP16x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX16x8_alt4(0xAAAAaaaa, 0x55555555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+
+	// phase 7: merge (all same compare 'dir')
+	if (dir == 1)
+	{
+		// distance 128 swaps - just compare the vecs
+		t1 =  _mm512_max_epu16(dv1, dv5);
+		t2 =  _mm512_max_epu16(dv2, dv6);
+		t3 =  _mm512_max_epu16(dv3, dv7);
+		t4 =  _mm512_max_epu16(dv4, dv8);
+		dv5 = _mm512_min_epu16(dv1, dv5);
+		dv6 = _mm512_min_epu16(dv2, dv6);
+		dv7 = _mm512_min_epu16(dv3, dv7);
+		dv8 = _mm512_min_epu16(dv4, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv3 = t3;
+		dv4 = t4;
+		
+		// distance 64 swaps - just compare the vecs
+		t1 =  _mm512_max_epu16(dv1, dv3);
+		t2 =  _mm512_max_epu16(dv2, dv4);
+		t3 =  _mm512_max_epu16(dv5, dv7);
+		t4 =  _mm512_max_epu16(dv6, dv8);
+		dv3 = _mm512_min_epu16(dv1, dv3);
+		dv4 = _mm512_min_epu16(dv2, dv4);
+		dv7 = _mm512_min_epu16(dv5, dv7);
+		dv8 = _mm512_min_epu16(dv6, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv5 = t3;
+		dv6 = t4;
+		
+		// distance 32 swaps - just compare the vecs
+		t1 =  _mm512_max_epu16(dv1, dv2);
+		t2 =  _mm512_max_epu16(dv3, dv4);
+		t3 =  _mm512_max_epu16(dv5, dv6);
+		t4 =  _mm512_max_epu16(dv7, dv8);
+		dv2 = _mm512_min_epu16(dv1, dv2);
+		dv4 = _mm512_min_epu16(dv3, dv4);
+		dv6 = _mm512_min_epu16(dv5, dv6);
+		dv8 = _mm512_min_epu16(dv7, dv8);
+		dv1 = t1;
+		dv3 = t2;
+		dv5 = t3;
+		dv7 = t4;
+
+		// distance 16 swaps
+		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0x0000ffff, 0xFFff0000, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		// distance 8 swaps
+		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0x00ff00ff, 0xFF00ff00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+		// distance 4 swaps
+		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0x0f0f0f0f, 0xF0F0f0f0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+		// distance 2 swaps
+		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0x33333333, 0xCCCCcccc, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+		// adjacent swaps
+		SWAP16x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0x55555555, 0xAAAAaaaa, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	}
+	else
+	{	
+		// distance 128 swaps - just compare the vecs
+		t1 =  _mm512_min_epu16(dv1, dv5);
+		t2 =  _mm512_min_epu16(dv2, dv6);
+		t3 =  _mm512_min_epu16(dv3, dv7);
+		t4 =  _mm512_min_epu16(dv4, dv8);
+		dv5 = _mm512_max_epu16(dv1, dv5);
+		dv6 = _mm512_max_epu16(dv2, dv6);
+		dv7 = _mm512_max_epu16(dv3, dv7);
+		dv8 = _mm512_max_epu16(dv4, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv3 = t3;
+		dv4 = t4;
+		
+		// distance 64 swaps - just compare the vecs
+		t1 =  _mm512_min_epu16(dv1, dv3);
+		t2 =  _mm512_min_epu16(dv2, dv4);
+		t3 =  _mm512_min_epu16(dv5, dv7);
+		t4 =  _mm512_min_epu16(dv6, dv8);
+		dv3 = _mm512_max_epu16(dv1, dv3);
+		dv4 = _mm512_max_epu16(dv2, dv4);
+		dv7 = _mm512_max_epu16(dv5, dv7);
+		dv8 = _mm512_max_epu16(dv6, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv5 = t3;
+		dv6 = t4;
+		
+		// distance 32 swaps - just compare the vecs
+		t1 =  _mm512_min_epu16(dv1, dv2);
+		t2 =  _mm512_min_epu16(dv3, dv4);
+		t3 =  _mm512_min_epu16(dv5, dv6);
+		t4 =  _mm512_min_epu16(dv7, dv8);
+		dv2 = _mm512_max_epu16(dv1, dv2);
+		dv4 = _mm512_max_epu16(dv3, dv4);
+		dv6 = _mm512_max_epu16(dv5, dv6);
+		dv8 = _mm512_max_epu16(dv7, dv8);
+		dv1 = t1;
+		dv3 = t2;
+		dv5 = t3;
+		dv7 = t4;
+		
+		// distance 16 swaps
+		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0xFFff0000, 0x0000ffff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		// distance 8 swaps
+		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0xFF00ff00, 0x00ff00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+		// distance 4 swaps
+		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0xF0F0f0f0, 0x0f0f0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+		// distance 2 swaps
+		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0xCCCCcccc, 0x33333333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+		// adjacent swaps
+		SWAP16x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX16x8(0xAAAAaaaa, 0x55555555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	}
+
+	_mm512_store_si512(data + 0  , dv1);
+	_mm512_store_si512(data + 32 , dv2);
+	_mm512_store_si512(data + 64 , dv3);
+	_mm512_store_si512(data + 96 , dv4);
+	_mm512_store_si512(data + 128, dv5);
+	_mm512_store_si512(data + 160, dv6);
+	_mm512_store_si512(data + 192, dv7);
+	_mm512_store_si512(data + 224, dv8);
+	
+	return;
+}
+
+void bitonic_merge32_dir_64(uint32_t* data, int dir) 
+{
+	// perform the final merge phase on 64 32-bit elements
+	int i, j;
+
+	__m512i t1;
+	__m512i t2;
+	__m512i t3;
+	__m512i t4;
+	__m512i dv1;
+	__m512i dv2;
+	__m512i dv3;
+	__m512i dv4;
+	__m512i dv1_swap;
+	__m512i dv2_swap;
+	__m512i dv3_swap;
+	__m512i dv4_swap;
+
+	dv1 = _mm512_load_epi32(data);
+	dv2 = _mm512_load_epi32(data + 16);
+	dv3 = _mm512_load_epi32(data + 32);
+	dv4 = _mm512_load_epi32(data + 48);
+
+	if (dir == 1)
+	{	
+		// distance 32 swaps - just compare the vecs
+		t1 =  _mm512_max_epu32(dv1, dv3);
+		t2 =  _mm512_max_epu32(dv2, dv4);
+		dv3 = _mm512_min_epu32(dv1, dv3);
+		dv4 = _mm512_min_epu32(dv2, dv4);
+		dv1 = t1;
+		dv2 = t2;
+
+		// distance 16 swaps - just compare the vecs
+		t1 =  _mm512_max_epu32(dv1, dv2);
+		t2 =  _mm512_max_epu32(dv3, dv4);
+		dv2 = _mm512_min_epu32(dv1, dv2);
+		dv4 = _mm512_min_epu32(dv3, dv4);
+		dv1 = t1;
+		dv3 = t2;
+		
+		// distance 8 swaps - 256 bits
+		SWAP256x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0x00ff, 0xFF00, dv1, dv2, dv3, dv4);
+		
+		// distance 4 swaps
+		SWAP128x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0x0f0f, 0xF0F0, dv1, dv2, dv3, dv4);
+		
+		// distance 2 swaps
+		SWAP64x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0x3333, 0xCCCC, dv1, dv2, dv3, dv4);
+		
+		// adjacent swaps
+		SWAP32x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0x5555, 0xaaaa, dv1, dv2, dv3, dv4);
+
+	}
+	else
+	{		
+		// distance 32 swaps - just compare the vecs
+		t1 =  _mm512_min_epu32(dv1, dv3);
+		t2 =  _mm512_min_epu32(dv2, dv4);
+		dv3 = _mm512_max_epu32(dv1, dv3);
+		dv4 = _mm512_max_epu32(dv2, dv4);
+		dv1 = t1;
+		dv2 = t2;
+
+		// distance 16 swaps - just compare the vecs
+		t1 =  _mm512_min_epu32(dv1, dv2);
+		t2 =  _mm512_min_epu32(dv3, dv4);
+		dv2 = _mm512_max_epu32(dv1, dv2);
+		dv4 = _mm512_max_epu32(dv3, dv4);
+		dv1 = t1;
+		dv3 = t2;
+
+		// distance 8 swaps - 256 bits
+		SWAP256x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0xFF00, 0x00ff, dv1, dv2, dv3, dv4);
+		
+		// distance 4 swaps
+		SWAP128x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0xf0f0, 0x0f0f, dv1, dv2, dv3, dv4);
+
+		// distance 2 swaps
+		SWAP64x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0xCCCC, 0x3333, dv1, dv2, dv3, dv4);
+		
+		// adjacent swaps
+		SWAP32x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0xaaaa, 0x5555, dv1, dv2, dv3, dv4);
+
+	}
+
+	_mm512_store_epi32(data, dv1);
+	_mm512_store_epi32(data + 16, dv2);
+	_mm512_store_epi32(data + 32, dv3);
+	_mm512_store_epi32(data + 48, dv4);
+
+	return;
+}
+
+void bitonic_sort32_dir_64(uint32_t* data, int dir) 
+{
+	// sort 64 32-bit elements
+	__m512i t1;
+	__m512i t2;
+	__m512i t3;
+	__m512i t4;
+	__m512i dv1;
+	__m512i dv2;
+	__m512i dv3;
+	__m512i dv4;
+	__m512i dv1_swap;
+	__m512i dv2_swap;
+	__m512i dv3_swap;
+	__m512i dv4_swap;
+
+	dv1 = _mm512_load_epi32(data);
+	dv2 = _mm512_load_epi32(data + 16);
+	dv3 = _mm512_load_epi32(data + 32);
+	dv4 = _mm512_load_epi32(data + 48);
+
+	// phase 0: dist-2 alternating compares ('CC')
+	
+	// adjacent swaps, alternating compares
+	SWAP32x4(dv1, dv2, dv3, dv4);
+	MINMAX32x4(0x6666, 0x9999, dv1, dv2, dv3, dv4);
+	
+	// phase 1: dist-4 alternating compares ('F0')
+	
+	// distance 2 swaps
+	SWAP64x4(dv1, dv2, dv3, dv4);
+	MINMAX32x4(0x3C3C, 0xC3C3, dv1, dv2, dv3, dv4)
+
+	// adjacent swaps
+	SWAP32x4(dv1, dv2, dv3, dv4);
+	MINMAX32x4(0x5A5A, 0xA5A5, dv1, dv2, dv3, dv4);
+
+	// phase 2: dist-8 alternating compares ('FF00')
+
+	// distance 4 swaps
+	SWAP128x4(dv1, dv2, dv3, dv4);
+	MINMAX32x4(0x0FF0, 0xf00f, dv1, dv2, dv3, dv4);
+
+	// distance 2 swaps
+	SWAP64x4(dv1, dv2, dv3, dv4);
+	MINMAX32x4(0x33CC, 0xcc33, dv1, dv2, dv3, dv4);
+
+	// adjacent swaps
+	SWAP32x4(dv1, dv2, dv3, dv4);
+	MINMAX32x4(0x55AA, 0xaa55, dv1, dv2, dv3, dv4);
+
+	// phase 2: dist-16 alternating compares (alternating gt/lt)
+	
+	// distance 8 swaps (256 bits)
+	SWAP256x4(dv1, dv2, dv3, dv4);
+	MINMAX32x4_alt1(0xFF00, 0x00ff, dv1, dv2, dv3, dv4);
+
+	// distance 4 swaps
+	SWAP128x4(dv1, dv2, dv3, dv4);
+	MINMAX32x4_alt1(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4);
+
+	// distance 2 swaps
+	SWAP64x4(dv1, dv2, dv3, dv4);
+	MINMAX32x4_alt1(0xCCCC, 0x3333, dv1, dv2, dv3, dv4);
+
+	// adjacent swaps
+	SWAP32x4(dv1, dv2, dv3, dv4);
+	MINMAX32x4_alt1(0xAAAA, 0x5555, dv1, dv2, dv3, dv4);
+
+	// phase 3: dist-32 alternating compares (alternating gtgt/ltlt)
+
+	// distance 16 swaps - just compare the vecs
+	t1 =  _mm512_min_epu32(dv1, dv2);
+	t2 =  _mm512_max_epu32(dv3, dv4);
+	dv2 = _mm512_max_epu32(dv1, dv2);
+	dv4 = _mm512_min_epu32(dv3, dv4);
+	dv1 = t1;
+	dv3 = t2;
+
+	// distance 8 swaps (256 bits)
+	SWAP256x4(dv1, dv2, dv3, dv4);
+	MINMAX32x4_alt2(0xFF00, 0x00ff, dv1, dv2, dv3, dv4);
+
+	// distance 4 swaps
+	SWAP128x4(dv1, dv2, dv3, dv4);
+	MINMAX32x4_alt2(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4);
+
+	// distance 2 swaps
+	SWAP64x4(dv1, dv2, dv3, dv4);
+	MINMAX32x4_alt2(0xCCCC, 0x3333, dv1, dv2, dv3, dv4);
+
+	// adjacent swaps
+	SWAP32x4(dv1, dv2, dv3, dv4);
+	MINMAX32x4_alt2(0xAAAA, 0x5555, dv1, dv2, dv3, dv4);
+
+	// phase 5: merge (all same compare 'dir')
+	if (dir == 1)
+	{	
+		// distance 32 swaps - just compare the vecs
+		t1 =  _mm512_max_epu32(dv1, dv3);
+		t2 =  _mm512_max_epu32(dv2, dv4);
+		dv3 = _mm512_min_epu32(dv1, dv3);
+		dv4 = _mm512_min_epu32(dv2, dv4);
+		dv1 = t1;
+		dv2 = t2;
+
+		// distance 16 swaps - just compare the vecs
+		t1 =  _mm512_max_epu32(dv1, dv2);
+		t2 =  _mm512_max_epu32(dv3, dv4);
+		dv2 = _mm512_min_epu32(dv1, dv2);
+		dv4 = _mm512_min_epu32(dv3, dv4);
+		dv1 = t1;
+		dv3 = t2;
+		
+		// distance 8 swaps - 256 bits
+		SWAP256x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0x00ff, 0xFF00, dv1, dv2, dv3, dv4);
+		
+		// distance 4 swaps
+		SWAP128x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0x0f0f, 0xF0F0, dv1, dv2, dv3, dv4);
+		
+		// distance 2 swaps
+		SWAP64x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0x3333, 0xCCCC, dv1, dv2, dv3, dv4);
+		
+		// adjacent swaps
+		SWAP32x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0x5555, 0xaaaa, dv1, dv2, dv3, dv4);
+
+	}
+	else
+	{		
+		// distance 32 swaps - just compare the vecs
+		t1 =  _mm512_min_epu32(dv1, dv3);
+		t2 =  _mm512_min_epu32(dv2, dv4);
+		dv3 = _mm512_max_epu32(dv1, dv3);
+		dv4 = _mm512_max_epu32(dv2, dv4);
+		dv1 = t1;
+		dv2 = t2;
+
+		// distance 16 swaps - just compare the vecs
+		t1 =  _mm512_min_epu32(dv1, dv2);
+		t2 =  _mm512_min_epu32(dv3, dv4);
+		dv2 = _mm512_max_epu32(dv1, dv2);
+		dv4 = _mm512_max_epu32(dv3, dv4);
+		dv1 = t1;
+		dv3 = t2;
+
+		// distance 8 swaps - 256 bits
+		SWAP256x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0xFF00, 0x00ff, dv1, dv2, dv3, dv4);
+		
+		// distance 4 swaps
+		SWAP128x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0xf0f0, 0x0f0f, dv1, dv2, dv3, dv4);
+
+		// distance 2 swaps
+		SWAP64x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0xCCCC, 0x3333, dv1, dv2, dv3, dv4);
+		
+		// adjacent swaps
+		SWAP32x4(dv1, dv2, dv3, dv4);
+		MINMAX32x4(0xaaaa, 0x5555, dv1, dv2, dv3, dv4);
+
+	}
+
+	_mm512_store_epi32(data, dv1);
+	_mm512_store_epi32(data + 16, dv2);
+	_mm512_store_epi32(data + 32, dv3);
+	_mm512_store_epi32(data + 48, dv4);
+	
+	return;
+}
 
 void bitonic_merge32_dir_128(uint32_t* data, int dir) 
 {
@@ -744,6 +2384,316 @@ void bitonic_merge32_dir_128(uint32_t* data, int dir)
 	_mm512_store_epi32(data + 96, dv7);
 	_mm512_store_epi32(data + 112, dv8);
 
+	return;
+}
+
+void bitonic_sort32_dir_128(uint32_t* data, int dir) 
+{
+	// sort 128 32-bit elements
+	int i, j;
+
+	__m512i t1;
+	__m512i t2;
+	__m512i t3;
+	__m512i t4;
+	__m512i t5;
+	__m512i t6;
+	__m512i t7;
+	__m512i t8;
+	__m512i dv1;
+	__m512i dv2;
+	__m512i dv3;
+	__m512i dv4;
+	__m512i dv5;
+	__m512i dv6;
+	__m512i dv7;
+	__m512i dv8;
+	__m512i dv1_swap;
+	__m512i dv2_swap;
+	__m512i dv3_swap;
+	__m512i dv4_swap;
+	__m512i dv5_swap;
+	__m512i dv6_swap;
+	__m512i dv7_swap;
+	__m512i dv8_swap;
+	__mmask16 m1;
+	__mmask16 m2;
+	__mmask16 m3;
+	__mmask16 m4;
+	__mmask16 m5;
+	__mmask16 m6;
+	__mmask16 m7;
+	__mmask16 m8;
+
+	dv1 = _mm512_load_epi32(data);
+	dv2 = _mm512_load_epi32(data + 16);
+	dv3 = _mm512_load_epi32(data + 32);
+	dv4 = _mm512_load_epi32(data + 48);
+	dv5 = _mm512_load_epi32(data + 64);
+	dv6 = _mm512_load_epi32(data + 80);
+	dv7 = _mm512_load_epi32(data + 96);
+	dv8 = _mm512_load_epi32(data + 112);
+
+	// phase 0: dist-2 alternating compares ('CC')
+	
+	// adjacent swaps, alternating compares
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX(0x6666, 0x9999, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	
+	// phase 1: dist-4 alternating compares ('F0')
+	
+	// distance 2 swaps
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX(0x3C3C, 0xC3C3, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8)
+
+	// adjacent swaps
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX(0x5A5A, 0xA5A5, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// phase 2: dist-8 alternating compares ('FF00')
+
+	// distance 4 swaps
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX(0x0FF0, 0xf00f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// distance 2 swaps
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX(0x33CC, 0xcc33, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// adjacent swaps
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX(0x55AA, 0xaa55, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// phase 2: dist-16 alternating compares (alternating gt/lt)
+	
+	// distance 8 swaps (256 bits)
+	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX_alt1(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// distance 4 swaps
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX_alt1(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// distance 2 swaps
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX_alt1(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// adjacent swaps
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX_alt1(0xAAAA, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// phase 3: dist-32 alternating compares (alternating gtgt/ltlt)
+
+	// distance 16 swaps - just compare the vecs
+	t1 =  _mm512_min_epu32(dv1, dv2);
+	t2 =  _mm512_max_epu32(dv3, dv4);
+	t3 =  _mm512_min_epu32(dv5, dv6);
+	t4 =  _mm512_max_epu32(dv7, dv8);
+	dv2 = _mm512_max_epu32(dv1, dv2);
+	dv4 = _mm512_min_epu32(dv3, dv4);
+	dv6 = _mm512_max_epu32(dv5, dv6);
+	dv8 = _mm512_min_epu32(dv7, dv8);
+	dv1 = t1;
+	dv3 = t2;
+	dv5 = t3;
+	dv7 = t4;
+
+	// distance 8 swaps (256 bits)
+	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX_alt2(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// distance 4 swaps
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX_alt2(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// distance 2 swaps
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX_alt2(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	// adjacent swaps
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX_alt2(0xAAAA, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	
+	// phase 4: dist-64 alternating compares (alternating gtgtgtgt/ltltltlt)
+
+	// distance 32 swaps - just compare the vecs
+	t1 =  _mm512_min_epu32(dv1, dv3);
+	t2 =  _mm512_min_epu32(dv2, dv4);
+	t3 =  _mm512_max_epu32(dv5, dv7);
+	t4 =  _mm512_max_epu32(dv6, dv8);
+	dv3 = _mm512_max_epu32(dv1, dv3);
+	dv4 = _mm512_max_epu32(dv2, dv4);
+	dv7 = _mm512_min_epu32(dv5, dv7);
+	dv8 = _mm512_min_epu32(dv6, dv8);
+	dv1 = t1;
+	dv2 = t2;
+	dv5 = t3;
+	dv6 = t4;
+	
+	// distance 16 swaps - just compare the vecs
+	t1 =  _mm512_min_epu32(dv1, dv2);
+	t2 =  _mm512_min_epu32(dv3, dv4);
+	t3 =  _mm512_max_epu32(dv5, dv6);
+	t4 =  _mm512_max_epu32(dv7, dv8);
+	dv2 = _mm512_max_epu32(dv1, dv2);
+	dv4 = _mm512_max_epu32(dv3, dv4);
+	dv6 = _mm512_min_epu32(dv5, dv6);
+	dv8 = _mm512_min_epu32(dv7, dv8);
+	dv1 = t1;
+	dv3 = t2;
+	dv5 = t3;
+	dv7 = t4;
+	
+	// distance 8 swaps (256 bits)
+	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX_alt4(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	
+	// distance 4 swaps
+	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX_alt4(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	
+	// distance 2 swaps
+	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX_alt4(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	
+	// adjacent swaps
+	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+	MINMAX_alt4(0xAAAA, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+
+	// phase 5: merge (all same compare 'dir')
+	if (dir == 1)
+	{
+		// dist-64 swaps
+		t1 =  _mm512_max_epu32(dv1, dv5);
+		t2 =  _mm512_max_epu32(dv2, dv6);
+		t3 =  _mm512_max_epu32(dv3, dv7);
+		t4 =  _mm512_max_epu32(dv4, dv8);
+		dv5 = _mm512_min_epu32(dv1, dv5);
+		dv6 = _mm512_min_epu32(dv2, dv6);
+		dv7 = _mm512_min_epu32(dv3, dv7);
+		dv8 = _mm512_min_epu32(dv4, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv3 = t3;
+		dv4 = t4;
+		
+		// distance 32 swaps - just compare the vecs
+		t1 =  _mm512_max_epu32(dv1, dv3);
+		t2 =  _mm512_max_epu32(dv2, dv4);
+		t3 =  _mm512_max_epu32(dv5, dv7);
+		t4 =  _mm512_max_epu32(dv6, dv8);
+		dv3 = _mm512_min_epu32(dv1, dv3);
+		dv4 = _mm512_min_epu32(dv2, dv4);
+		dv7 = _mm512_min_epu32(dv5, dv7);
+		dv8 = _mm512_min_epu32(dv6, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv5 = t3;
+		dv6 = t4;
+
+		// distance 16 swaps - just compare the vecs
+		t1 =  _mm512_max_epu32(dv1, dv2);
+		t2 =  _mm512_max_epu32(dv3, dv4);
+		t3 =  _mm512_max_epu32(dv5, dv6);
+		t4 =  _mm512_max_epu32(dv7, dv8);
+		dv2 = _mm512_min_epu32(dv1, dv2);
+		dv4 = _mm512_min_epu32(dv3, dv4);
+		dv6 = _mm512_min_epu32(dv5, dv6);
+		dv8 = _mm512_min_epu32(dv7, dv8);
+		dv1 = t1;
+		dv3 = t2;
+		dv5 = t3;
+		dv7 = t4;
+		
+		// distance 8 swaps - 256 bits
+		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0x00ff, 0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		// distance 4 swaps
+		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0x0f0f, 0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		// distance 2 swaps
+		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0x3333, 0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		// adjacent swaps
+		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0x5555, 0xaaaa, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	}
+	else
+	{	
+		// dist-64 swaps
+		t1 =  _mm512_min_epu32(dv1, dv5);
+		t2 =  _mm512_min_epu32(dv2, dv6);
+		t3 =  _mm512_min_epu32(dv3, dv7);
+		t4 =  _mm512_min_epu32(dv4, dv8);
+		dv5 = _mm512_max_epu32(dv1, dv5);
+		dv6 = _mm512_max_epu32(dv2, dv6);
+		dv7 = _mm512_max_epu32(dv3, dv7);
+		dv8 = _mm512_max_epu32(dv4, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv3 = t3;
+		dv4 = t4;
+		
+		// distance 32 swaps - just compare the vecs
+		t1 =  _mm512_min_epu32(dv1, dv3);
+		t2 =  _mm512_min_epu32(dv2, dv4);
+		t3 =  _mm512_min_epu32(dv5, dv7);
+		t4 =  _mm512_min_epu32(dv6, dv8);
+		dv3 = _mm512_max_epu32(dv1, dv3);
+		dv4 = _mm512_max_epu32(dv2, dv4);
+		dv7 = _mm512_max_epu32(dv5, dv7);
+		dv8 = _mm512_max_epu32(dv6, dv8);
+		dv1 = t1;
+		dv2 = t2;
+		dv5 = t3;
+		dv6 = t4;
+
+		// distance 16 swaps - just compare the vecs
+		t1 =  _mm512_min_epu32(dv1, dv2);
+		t2 =  _mm512_min_epu32(dv3, dv4);
+		t3 =  _mm512_min_epu32(dv5, dv6);
+		t4 =  _mm512_min_epu32(dv7, dv8);
+		dv2 = _mm512_max_epu32(dv1, dv2);
+		dv4 = _mm512_max_epu32(dv3, dv4);
+		dv6 = _mm512_max_epu32(dv5, dv6);
+		dv8 = _mm512_max_epu32(dv7, dv8);
+		dv1 = t1;
+		dv3 = t2;
+		dv5 = t3;
+		dv7 = t4;
+
+		// distance 8 swaps - 256 bits
+		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		// distance 4 swaps
+		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0xf0f0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+		// distance 2 swaps
+		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		
+		// adjacent swaps
+		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+		MINMAX(0xaaaa, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
+
+	}
+
+	_mm512_store_epi32(data, dv1);
+	_mm512_store_epi32(data + 16, dv2);
+	_mm512_store_epi32(data + 32, dv3);
+	_mm512_store_epi32(data + 48, dv4);
+	_mm512_store_epi32(data + 64, dv5);
+	_mm512_store_epi32(data + 80, dv6);
+	_mm512_store_epi32(data + 96, dv7);
+	_mm512_store_epi32(data + 112, dv8);
+	
 	return;
 }
 
@@ -1106,316 +3056,6 @@ void bitonic_merge32_dir_256(uint32_t* data, int dir)
 	_mm512_store_epi32(data + 13 * 16, dv14);
 	_mm512_store_epi32(data + 14 * 16, dv15);
 	_mm512_store_epi32(data + 15 * 16, dv16);
-	
-	return;
-}
-
-void bitonic_sort32_dir_128(uint32_t* data, int dir) 
-{
-	// sort 128 32-bit elements
-	int i, j;
-
-	__m512i t1;
-	__m512i t2;
-	__m512i t3;
-	__m512i t4;
-	__m512i t5;
-	__m512i t6;
-	__m512i t7;
-	__m512i t8;
-	__m512i dv1;
-	__m512i dv2;
-	__m512i dv3;
-	__m512i dv4;
-	__m512i dv5;
-	__m512i dv6;
-	__m512i dv7;
-	__m512i dv8;
-	__m512i dv1_swap;
-	__m512i dv2_swap;
-	__m512i dv3_swap;
-	__m512i dv4_swap;
-	__m512i dv5_swap;
-	__m512i dv6_swap;
-	__m512i dv7_swap;
-	__m512i dv8_swap;
-	__mmask16 m1;
-	__mmask16 m2;
-	__mmask16 m3;
-	__mmask16 m4;
-	__mmask16 m5;
-	__mmask16 m6;
-	__mmask16 m7;
-	__mmask16 m8;
-
-	dv1 = _mm512_load_epi32(data);
-	dv2 = _mm512_load_epi32(data + 16);
-	dv3 = _mm512_load_epi32(data + 32);
-	dv4 = _mm512_load_epi32(data + 48);
-	dv5 = _mm512_load_epi32(data + 64);
-	dv6 = _mm512_load_epi32(data + 80);
-	dv7 = _mm512_load_epi32(data + 96);
-	dv8 = _mm512_load_epi32(data + 112);
-
-	// phase 0: dist-2 alternating compares ('CC')
-	
-	// adjacent swaps, alternating compares
-	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX(0x6666, 0x9999, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	
-	// phase 1: dist-4 alternating compares ('F0')
-	
-	// distance 2 swaps
-	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX(0x3C3C, 0xC3C3, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8)
-
-	// adjacent swaps
-	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX(0x5A5A, 0xA5A5, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-	// phase 2: dist-8 alternating compares ('FF00')
-
-	// distance 4 swaps
-	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX(0x0FF0, 0xf00f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-	// distance 2 swaps
-	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX(0x33CC, 0xcc33, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-	// adjacent swaps
-	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX(0x55AA, 0xaa55, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-	// phase 2: dist-16 alternating compares (alternating gt/lt)
-	
-	// distance 8 swaps (256 bits)
-	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX_alt1(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-	// distance 4 swaps
-	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX_alt1(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-	// distance 2 swaps
-	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX_alt1(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-	// adjacent swaps
-	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX_alt1(0xAAAA, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-	// phase 3: dist-32 alternating compares (alternating gtgt/ltlt)
-
-	// distance 16 swaps - just compare the vecs
-	t1 =  _mm512_min_epu32(dv1, dv2);
-	t2 =  _mm512_max_epu32(dv3, dv4);
-	t3 =  _mm512_min_epu32(dv5, dv6);
-	t4 =  _mm512_max_epu32(dv7, dv8);
-	dv2 = _mm512_max_epu32(dv1, dv2);
-	dv4 = _mm512_min_epu32(dv3, dv4);
-	dv6 = _mm512_max_epu32(dv5, dv6);
-	dv8 = _mm512_min_epu32(dv7, dv8);
-	dv1 = t1;
-	dv3 = t2;
-	dv5 = t3;
-	dv7 = t4;
-
-	// distance 8 swaps (256 bits)
-	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX_alt2(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-	// distance 4 swaps
-	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX_alt2(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-	// distance 2 swaps
-	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX_alt2(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-	// adjacent swaps
-	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX_alt2(0xAAAA, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	
-	// phase 4: dist-64 alternating compares (alternating gtgtgtgt/ltltltlt)
-
-	// distance 32 swaps - just compare the vecs
-	t1 =  _mm512_min_epu32(dv1, dv3);
-	t2 =  _mm512_min_epu32(dv2, dv4);
-	t3 =  _mm512_max_epu32(dv5, dv7);
-	t4 =  _mm512_max_epu32(dv6, dv8);
-	dv3 = _mm512_max_epu32(dv1, dv3);
-	dv4 = _mm512_max_epu32(dv2, dv4);
-	dv7 = _mm512_min_epu32(dv5, dv7);
-	dv8 = _mm512_min_epu32(dv6, dv8);
-	dv1 = t1;
-	dv2 = t2;
-	dv5 = t3;
-	dv6 = t4;
-	
-	// distance 16 swaps - just compare the vecs
-	t1 =  _mm512_min_epu32(dv1, dv2);
-	t2 =  _mm512_min_epu32(dv3, dv4);
-	t3 =  _mm512_max_epu32(dv5, dv6);
-	t4 =  _mm512_max_epu32(dv7, dv8);
-	dv2 = _mm512_max_epu32(dv1, dv2);
-	dv4 = _mm512_max_epu32(dv3, dv4);
-	dv6 = _mm512_min_epu32(dv5, dv6);
-	dv8 = _mm512_min_epu32(dv7, dv8);
-	dv1 = t1;
-	dv3 = t2;
-	dv5 = t3;
-	dv7 = t4;
-	
-	// distance 8 swaps (256 bits)
-	SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX_alt4(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	
-	// distance 4 swaps
-	SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX_alt4(0xF0F0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	
-	// distance 2 swaps
-	SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX_alt4(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	
-	// adjacent swaps
-	SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-	MINMAX_alt4(0xAAAA, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-
-	// phase 5: merge (all same compare 'dir')
-	if (dir == 1)
-	{
-		// dist-64 swaps
-		t1 =  _mm512_max_epu32(dv1, dv5);
-		t2 =  _mm512_max_epu32(dv2, dv6);
-		t3 =  _mm512_max_epu32(dv3, dv7);
-		t4 =  _mm512_max_epu32(dv4, dv8);
-		dv5 = _mm512_min_epu32(dv1, dv5);
-		dv6 = _mm512_min_epu32(dv2, dv6);
-		dv7 = _mm512_min_epu32(dv3, dv7);
-		dv8 = _mm512_min_epu32(dv4, dv8);
-		dv1 = t1;
-		dv2 = t2;
-		dv3 = t3;
-		dv4 = t4;
-		
-		// distance 32 swaps - just compare the vecs
-		t1 =  _mm512_max_epu32(dv1, dv3);
-		t2 =  _mm512_max_epu32(dv2, dv4);
-		t3 =  _mm512_max_epu32(dv5, dv7);
-		t4 =  _mm512_max_epu32(dv6, dv8);
-		dv3 = _mm512_min_epu32(dv1, dv3);
-		dv4 = _mm512_min_epu32(dv2, dv4);
-		dv7 = _mm512_min_epu32(dv5, dv7);
-		dv8 = _mm512_min_epu32(dv6, dv8);
-		dv1 = t1;
-		dv2 = t2;
-		dv5 = t3;
-		dv6 = t4;
-
-		// distance 16 swaps - just compare the vecs
-		t1 =  _mm512_max_epu32(dv1, dv2);
-		t2 =  _mm512_max_epu32(dv3, dv4);
-		t3 =  _mm512_max_epu32(dv5, dv6);
-		t4 =  _mm512_max_epu32(dv7, dv8);
-		dv2 = _mm512_min_epu32(dv1, dv2);
-		dv4 = _mm512_min_epu32(dv3, dv4);
-		dv6 = _mm512_min_epu32(dv5, dv6);
-		dv8 = _mm512_min_epu32(dv7, dv8);
-		dv1 = t1;
-		dv3 = t2;
-		dv5 = t3;
-		dv7 = t4;
-		
-		// distance 8 swaps - 256 bits
-		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		MINMAX(0x00ff, 0xFF00, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		
-		// distance 4 swaps
-		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		MINMAX(0x0f0f, 0xF0F0, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		
-		// distance 2 swaps
-		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		MINMAX(0x3333, 0xCCCC, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		
-		// adjacent swaps
-		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		MINMAX(0x5555, 0xaaaa, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-	}
-	else
-	{	
-		// dist-64 swaps
-		t1 =  _mm512_min_epu32(dv1, dv5);
-		t2 =  _mm512_min_epu32(dv2, dv6);
-		t3 =  _mm512_min_epu32(dv3, dv7);
-		t4 =  _mm512_min_epu32(dv4, dv8);
-		dv5 = _mm512_max_epu32(dv1, dv5);
-		dv6 = _mm512_max_epu32(dv2, dv6);
-		dv7 = _mm512_max_epu32(dv3, dv7);
-		dv8 = _mm512_max_epu32(dv4, dv8);
-		dv1 = t1;
-		dv2 = t2;
-		dv3 = t3;
-		dv4 = t4;
-		
-		// distance 32 swaps - just compare the vecs
-		t1 =  _mm512_min_epu32(dv1, dv3);
-		t2 =  _mm512_min_epu32(dv2, dv4);
-		t3 =  _mm512_min_epu32(dv5, dv7);
-		t4 =  _mm512_min_epu32(dv6, dv8);
-		dv3 = _mm512_max_epu32(dv1, dv3);
-		dv4 = _mm512_max_epu32(dv2, dv4);
-		dv7 = _mm512_max_epu32(dv5, dv7);
-		dv8 = _mm512_max_epu32(dv6, dv8);
-		dv1 = t1;
-		dv2 = t2;
-		dv5 = t3;
-		dv6 = t4;
-
-		// distance 16 swaps - just compare the vecs
-		t1 =  _mm512_min_epu32(dv1, dv2);
-		t2 =  _mm512_min_epu32(dv3, dv4);
-		t3 =  _mm512_min_epu32(dv5, dv6);
-		t4 =  _mm512_min_epu32(dv7, dv8);
-		dv2 = _mm512_max_epu32(dv1, dv2);
-		dv4 = _mm512_max_epu32(dv3, dv4);
-		dv6 = _mm512_max_epu32(dv5, dv6);
-		dv8 = _mm512_max_epu32(dv7, dv8);
-		dv1 = t1;
-		dv3 = t2;
-		dv5 = t3;
-		dv7 = t4;
-
-		// distance 8 swaps - 256 bits
-		SWAP256x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		MINMAX(0xFF00, 0x00ff, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		
-		// distance 4 swaps
-		SWAP128x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		MINMAX(0xf0f0, 0x0f0f, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-		// distance 2 swaps
-		SWAP64x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		MINMAX(0xCCCC, 0x3333, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		
-		// adjacent swaps
-		SWAP32x8(dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-		MINMAX(0xaaaa, 0x5555, dv1, dv2, dv3, dv4, dv5, dv6, dv7, dv8);
-
-	}
-
-	_mm512_store_epi32(data, dv1);
-	_mm512_store_epi32(data + 16, dv2);
-	_mm512_store_epi32(data + 32, dv3);
-	_mm512_store_epi32(data + 48, dv4);
-	_mm512_store_epi32(data + 64, dv5);
-	_mm512_store_epi32(data + 80, dv6);
-	_mm512_store_epi32(data + 96, dv7);
-	_mm512_store_epi32(data + 112, dv8);
 	
 	return;
 }
@@ -4097,9 +5737,250 @@ void sort(uint64_t *data, uint32_t sz, int dir)
 	return;
 }
 
+void bitonic_merge16(uint16_t *data, uint32_t sz, int dir)
+{
+	if (sz <= 64)
+	{
+		// base case: do the hardcoded 128-element sort
+		bitonic_merge16_dir_64(data, dir);
+		return;
+	}
+	else if (sz <= 128)
+	{
+		// base case: do the hardcoded 128-element sort
+		bitonic_merge16_dir_128(data, dir);
+		return;
+	}
+	else if (sz <= 256)
+	{
+		// base case: do the hardcoded 128-element sort
+		bitonic_merge16_dir_256(data, dir);
+		return;
+	}
+	
+	// half-size cmp/swap
+	int i;
+
+	// we have sz/2 swaps to do at a stride of sz/2.
+	// the number of swaps will be divisible by 256 because
+	// sz is at least 512 (basecase is 256).
+	// can batch up the swaps:
+	__m512i t1;
+	__m512i t2;
+	__m512i t3;
+	__m512i t4;
+	__m512i t5;
+	__m512i t6;
+	__m512i t7;
+	__m512i t8;
+	__m512i dv1;
+	__m512i dv2;
+	__m512i dv3;
+	__m512i dv4;
+	__m512i dv5;
+	__m512i dv6;
+	__m512i dv7;
+	__m512i dv8;
+	__m512i dv9;
+	__m512i dv10;
+	__m512i dv11;
+	__m512i dv12;
+	__m512i dv13;
+	__m512i dv14;
+	__m512i dv15;
+	__m512i dv16;
+
+			
+	if (dir == 1)
+	{
+		// 512-element merge passes at a stride of sz/2
+		for (i = 0; i < sz / 512; i++)
+		{
+			// swap 128 elements at starting offset i * 128
+			dv1 = _mm512_load_si512(data + i * 256 +  0);
+			dv2 = _mm512_load_si512(data + i * 256 + 32);
+			dv3 = _mm512_load_si512(data + i * 256 + 64);
+			dv4 = _mm512_load_si512(data + i * 256 + 96);
+			dv5 = _mm512_load_si512(data + i * 256 + 128);
+			dv6 = _mm512_load_si512(data + i * 256 + 160);
+			dv7 = _mm512_load_si512(data + i * 256 + 192);
+			dv8 = _mm512_load_si512(data + i * 256 + 224);
+			
+			// with 128 elements at offset i * 128 + stride (sz/2)
+			dv9  = _mm512_load_si512(data + i * 256 + sz/2 +  0);
+			dv10 = _mm512_load_si512(data + i * 256 + sz/2 + 32);
+			dv11 = _mm512_load_si512(data + i * 256 + sz/2 + 64);
+			dv12 = _mm512_load_si512(data + i * 256 + sz/2 + 96);
+			dv13 = _mm512_load_si512(data + i * 256 + sz/2 + 128);
+			dv14 = _mm512_load_si512(data + i * 256 + sz/2 + 160);
+			dv15 = _mm512_load_si512(data + i * 256 + sz/2 + 192);
+			dv16 = _mm512_load_si512(data + i * 256 + sz/2 + 224);
+
+
+			t1 =  _mm512_max_epu16(dv1, dv9 );
+			t2 =  _mm512_max_epu16(dv2, dv10);
+			t3 =  _mm512_max_epu16(dv3, dv11);
+			t4 =  _mm512_max_epu16(dv4, dv12);
+			dv9  = _mm512_min_epu16(dv1, dv9 );
+			dv10 = _mm512_min_epu16(dv2, dv10);
+			dv11 = _mm512_min_epu16(dv3, dv11);
+			dv12 = _mm512_min_epu16(dv4, dv12);
+			dv1 = t1;
+			dv2 = t2;
+			dv3 = t3;
+			dv4 = t4;
+			
+			t1 =  _mm512_max_epu16(dv5, dv13);
+			t2 =  _mm512_max_epu16(dv6, dv14);
+			t3 =  _mm512_max_epu16(dv7, dv15);
+			t4 =  _mm512_max_epu16(dv8, dv16);
+			dv13 = _mm512_min_epu16(dv5, dv13);
+			dv14 = _mm512_min_epu16(dv6, dv14);
+			dv15 = _mm512_min_epu16(dv7, dv15);
+			dv16 = _mm512_min_epu16(dv8, dv16);
+			dv5 = t1;
+			dv6 = t2;
+			dv7 = t3;
+			dv8 = t4;
+			
+			_mm512_store_si512(data + i * 256 +  0, dv1);
+			_mm512_store_si512(data + i * 256 + 32, dv2);
+			_mm512_store_si512(data + i * 256 + 64, dv3);
+			_mm512_store_si512(data + i * 256 + 96, dv4);
+			_mm512_store_si512(data + i * 256 + 128, dv5);
+			_mm512_store_si512(data + i * 256 + 160, dv6);
+			_mm512_store_si512(data + i * 256 + 192, dv7);
+			_mm512_store_si512(data + i * 256 + 224, dv8);
+			
+			_mm512_store_si512(data + i * 256 + sz/2 +  0, dv9);
+			_mm512_store_si512(data + i * 256 + sz/2 + 32, dv10);
+			_mm512_store_si512(data + i * 256 + sz/2 + 64, dv11);
+			_mm512_store_si512(data + i * 256 + sz/2 + 96, dv12);
+			_mm512_store_si512(data + i * 256 + sz/2 + 128, dv13);
+			_mm512_store_si512(data + i * 256 + sz/2 + 160, dv14);
+			_mm512_store_si512(data + i * 256 + sz/2 + 192, dv15);
+			_mm512_store_si512(data + i * 256 + sz/2 + 224, dv16);
+		}
+	}
+	else
+	{
+		// 256-element merge passes at a stride of sz/2
+		for (i = 0; i < sz / 512; i++)
+		{
+			// swap 128 elements at starting offset i * 128
+			dv1 = _mm512_load_si512(data + i * 256 +  0);
+			dv2 = _mm512_load_si512(data + i * 256 + 32);
+			dv3 = _mm512_load_si512(data + i * 256 + 64);
+			dv4 = _mm512_load_si512(data + i * 256 + 96);
+			dv5 = _mm512_load_si512(data + i * 256 + 128);
+			dv6 = _mm512_load_si512(data + i * 256 + 160);
+			dv7 = _mm512_load_si512(data + i * 256 + 192);
+			dv8 = _mm512_load_si512(data + i * 256 + 224);
+			
+			// with 128 elements at offset i * 128 + stride (sz/2)
+			dv9  = _mm512_load_si512(data + i * 256 + sz/2 +  0);
+			dv10 = _mm512_load_si512(data + i * 256 + sz/2 + 32);
+			dv11 = _mm512_load_si512(data + i * 256 + sz/2 + 64);
+			dv12 = _mm512_load_si512(data + i * 256 + sz/2 + 96);
+			dv13 = _mm512_load_si512(data + i * 256 + sz/2 + 128);
+			dv14 = _mm512_load_si512(data + i * 256 + sz/2 + 160);
+			dv15 = _mm512_load_si512(data + i * 256 + sz/2 + 192);
+			dv16 = _mm512_load_si512(data + i * 256 + sz/2 + 224);
+
+
+			t1 =  _mm512_min_epu16(dv1, dv9 );
+			t2 =  _mm512_min_epu16(dv2, dv10);
+			t3 =  _mm512_min_epu16(dv3, dv11);
+			t4 =  _mm512_min_epu16(dv4, dv12);
+			dv9  = _mm512_max_epu16(dv1, dv9 );
+			dv10 = _mm512_max_epu16(dv2, dv10);
+			dv11 = _mm512_max_epu16(dv3, dv11);
+			dv12 = _mm512_max_epu16(dv4, dv12);
+			dv1 = t1;
+			dv2 = t2;
+			dv3 = t3;
+			dv4 = t4;
+			
+			t1 =  _mm512_min_epu16(dv5, dv13);
+			t2 =  _mm512_min_epu16(dv6, dv14);
+			t3 =  _mm512_min_epu16(dv7, dv15);
+			t4 =  _mm512_min_epu16(dv8, dv16);
+			dv13 = _mm512_max_epu16(dv5, dv13);
+			dv14 = _mm512_max_epu16(dv6, dv14);
+			dv15 = _mm512_max_epu16(dv7, dv15);
+			dv16 = _mm512_max_epu16(dv8, dv16);
+			dv5 = t1;
+			dv6 = t2;
+			dv7 = t3;
+			dv8 = t4;
+			
+			_mm512_store_si512(data + i * 256 +  0, dv1);
+			_mm512_store_si512(data + i * 256 + 32, dv2);
+			_mm512_store_si512(data + i * 256 + 64, dv3);
+			_mm512_store_si512(data + i * 256 + 96, dv4);
+			_mm512_store_si512(data + i * 256 + 128, dv5);
+			_mm512_store_si512(data + i * 256 + 160, dv6);
+			_mm512_store_si512(data + i * 256 + 192, dv7);
+			_mm512_store_si512(data + i * 256 + 224, dv8);
+			
+			_mm512_store_si512(data + i * 256 + sz/2 +  0, dv9);
+			_mm512_store_si512(data + i * 256 + sz/2 + 32, dv10);
+			_mm512_store_si512(data + i * 256 + sz/2 + 64, dv11);
+			_mm512_store_si512(data + i * 256 + sz/2 + 96, dv12);
+			_mm512_store_si512(data + i * 256 + sz/2 + 128, dv13);
+			_mm512_store_si512(data + i * 256 + sz/2 + 160, dv14);
+			_mm512_store_si512(data + i * 256 + sz/2 + 192, dv15);
+			_mm512_store_si512(data + i * 256 + sz/2 + 224, dv16);
+
+		}
+	}
+
+	// two parallel half-size merges
+	bitonic_merge16(data, sz / 2, dir);
+	bitonic_merge16(data + sz / 2, sz / 2, dir);
+}
+
+void bitonic_sort16(uint16_t *data, uint32_t sz, int dir)
+{
+	if (sz == 64)
+	{
+		// base case: do the hardcoded 128-element sort
+		bitonic_sort16_dir_64(data, dir);
+		return;
+	}
+	else if (sz == 128)
+	{
+		// base case: do the hardcoded 128-element sort
+		bitonic_sort16_dir_128(data, dir);
+		return;
+	}
+	else if (sz == 256)
+	{
+		// base case: do the hardcoded 128-element sort
+		bitonic_sort16_dir_256(data, dir);
+		return;
+	}
+
+	// two half-size bitonic sorts,
+	// with opposite directions.
+	bitonic_sort16(data, sz / 2, 0);
+	bitonic_sort16(data + sz / 2, sz / 2, 1);
+
+	// merge in the specified direction
+	bitonic_merge16(data, sz, dir);
+
+	return;
+}
+
 void bitonic_merge32(uint32_t *data, uint32_t sz, int dir)
 {
-	if (sz <= 128)
+	if (sz <= 64)
+	{
+		// base case: do the hardcoded 128-element sort
+		bitonic_merge32_dir_64(data, dir);
+		return;
+	}
+	else if (sz <= 128)
 	{
 		// base case: do the hardcoded 128-element sort
 		bitonic_merge32_dir_128(data, dir);
@@ -4206,14 +6087,14 @@ void bitonic_merge32(uint32_t *data, uint32_t sz, int dir)
 			_mm512_store_epi32(data + i * 128 + 96, dv7);
 			_mm512_store_epi32(data + i * 128 + 112, dv8);
 			
-			_mm512_store_epi64(data + i * 128 + sz/2 +  0,  dv9);
-			_mm512_store_epi64(data + i * 128 + sz/2 + 16,  dv10);
-			_mm512_store_epi64(data + i * 128 + sz/2 + 32, dv11);
-			_mm512_store_epi64(data + i * 128 + sz/2 + 48, dv12);
-			_mm512_store_epi64(data + i * 128 + sz/2 + 64, dv13);
-			_mm512_store_epi64(data + i * 128 + sz/2 + 80, dv14);
-			_mm512_store_epi64(data + i * 128 + sz/2 + 96, dv15);
-			_mm512_store_epi64(data + i * 128 + sz/2 + 112, dv16);
+			_mm512_store_epi32(data + i * 128 + sz/2 +  0,  dv9);
+			_mm512_store_epi32(data + i * 128 + sz/2 + 16,  dv10);
+			_mm512_store_epi32(data + i * 128 + sz/2 + 32, dv11);
+			_mm512_store_epi32(data + i * 128 + sz/2 + 48, dv12);
+			_mm512_store_epi32(data + i * 128 + sz/2 + 64, dv13);
+			_mm512_store_epi32(data + i * 128 + sz/2 + 80, dv14);
+			_mm512_store_epi32(data + i * 128 + sz/2 + 96, dv15);
+			_mm512_store_epi32(data + i * 128 + sz/2 + 112, dv16);
 			
 			// swap 128 elements at starting offset i * 128
 			//dv1 = _mm512_load_epi32(data + i * 256 + 8*16);
@@ -4339,14 +6220,14 @@ void bitonic_merge32(uint32_t *data, uint32_t sz, int dir)
 			_mm512_store_epi32(data + i * 128 + 96, dv7);
 			_mm512_store_epi32(data + i * 128 + 112, dv8);
 			
-			_mm512_store_epi64(data + i * 128 + sz/2 +  0,  dv9);
-			_mm512_store_epi64(data + i * 128 + sz/2 + 16,  dv10);
-			_mm512_store_epi64(data + i * 128 + sz/2 + 32, dv11);
-			_mm512_store_epi64(data + i * 128 + sz/2 + 48, dv12);
-			_mm512_store_epi64(data + i * 128 + sz/2 + 64, dv13);
-			_mm512_store_epi64(data + i * 128 + sz/2 + 80, dv14);
-			_mm512_store_epi64(data + i * 128 + sz/2 + 96, dv15);
-			_mm512_store_epi64(data + i * 128 + sz/2 + 112, dv16);
+			_mm512_store_epi32(data + i * 128 + sz/2 +  0,  dv9);
+			_mm512_store_epi32(data + i * 128 + sz/2 + 16,  dv10);
+			_mm512_store_epi32(data + i * 128 + sz/2 + 32, dv11);
+			_mm512_store_epi32(data + i * 128 + sz/2 + 48, dv12);
+			_mm512_store_epi32(data + i * 128 + sz/2 + 64, dv13);
+			_mm512_store_epi32(data + i * 128 + sz/2 + 80, dv14);
+			_mm512_store_epi32(data + i * 128 + sz/2 + 96, dv15);
+			_mm512_store_epi32(data + i * 128 + sz/2 + 112, dv16);
 			
 			// swap 128 elements at starting offset i * 128
 			//dv1 = _mm512_load_epi32(data + i * 256 + 8*16);
@@ -4421,9 +6302,21 @@ void bitonic_merge32(uint32_t *data, uint32_t sz, int dir)
 
 void bitonic_sort32(uint32_t *data, uint32_t sz, int dir)
 {
-	if (sz == 256)
+	if (sz == 64)
 	{
 		// base case: do the hardcoded 128-element sort
+		bitonic_sort32_dir_64(data, dir);
+		return;
+	}
+	else if (sz == 128)
+	{
+		// base case: do the hardcoded 128-element sort
+		bitonic_sort32_dir_128(data, dir);
+		return;
+	}
+	else if (sz == 256)
+	{
+		// base case: do the hardcoded 256-element sort
 		bitonic_sort32_dir_256(data, dir);
 		return;
 	}
@@ -4536,45 +6429,47 @@ void parsort(uint64_t *data, uint32_t sz, int dir, int threads)
 }
 
 // for 20M element problems
-#define num_buckets 256
+#ifndef SH
 #define SH 8
+#endif
+#define NB (1<<SH)
+#define NB1 ((NB)-1)
 #define portion_sz 64
 
-void bucket_sort2(uint64_t *buckets, uint32_t bucket_size, uint32_t *bucket_counts, 
+void bucket_sort16(uint16_t *buckets, uint32_t bucket_size, uint32_t *bucket_counts, 
 	uint64_t *data, uint32_t key_bits, uint32_t sz)
 {
 	// sort data into buckets by most significant bits.
 	// assume the buckets have been allocated of sufficient size for the random data.
-	// the buckets are subdivided into cache-friendly portions of size portion_sz * num_buckets.
+	// the buckets are subdivided into cache-friendly portions of size portion_sz * NB.
 	// once a particular portion is filled for a bucket, increment that portion's offset by
-	// portion_sz * num_buckets to being filling the next portion.
+	// portion_sz * NB to begin filling the next portion.
 	int i;
-	uint64_t *current_bucket[num_buckets];
-	uint64_t portion_cnt[num_buckets];
-	
-	for (i = 0; i < num_buckets; i++) {bucket_counts[i] = 0;};
-	for (i = 0; i < num_buckets; i++) 
+	uint16_t *current_bucket[NB];
+	uint32_t portion_cnt[NB];
+
+	for (i = 0; i < NB; i++) 
 	{
 		current_bucket[i] = buckets + i * portion_sz;
+		bucket_counts[i] = 0;
 		portion_cnt[i] = 0;
 	}
 	
 	for (i = 0; i < sz; i++) {
-		uint32 key = (uint32)(data[i] >> (key_bits - SH));
-		uint64_t *bptr = current_bucket[key];
-		//if(key>=num_buckets) {printf("error key too big: %u (%lu)\n", key, data[i]); fflush(stdout);}
-		bptr[portion_cnt[key]] = data[i];
+		uint32 key = (uint32)((data[i] >> 16) & NB1);
+		uint16_t *bptr = current_bucket[key];
+		bptr[portion_cnt[key]] = data[i] & 0xffff;
 		portion_cnt[key]++;
-		
+
 		if (portion_cnt[key] == portion_sz)
 		{
-			current_bucket[key] += portion_sz * num_buckets;
+			current_bucket[key] += portion_sz * NB;
 			bucket_counts[key] += portion_sz;
 			portion_cnt[key] = 0;
 		}
 	}
 	
-	for (i = 0; i < num_buckets; i++)
+	for (i = 0; i < NB; i++)
 	{
 		bucket_counts[i] += portion_cnt[i];
 	}
@@ -4582,47 +6477,60 @@ void bucket_sort2(uint64_t *buckets, uint32_t bucket_size, uint32_t *bucket_coun
 	return;
 }
 
-#define sm_bucket_sz 32
-void bucket_sort(uint64_t *buckets, uint32_t bucket_size, uint32_t *bucket_counts, 
+void bucket_sort32(uint32_t *buckets, uint32_t bucket_size, uint32_t *bucket_counts, 
 	uint64_t *data, uint32_t key_bits, uint32_t sz)
 {
 	// sort data into buckets by most significant bits.
 	// assume the buckets have been allocated of sufficient size for the random data.
-	
-	// we sort into a set of smaller buckets that fit in L1 and periodically
-	// dump these buckets into the main buckets.
-	// L1 has room for 4096 uint64_t's.  64 buckets is 64 elements in each.
-	uint64_t sm_buckets[num_buckets*sm_bucket_sz];
-	uint32_t sm_bcnt[num_buckets];
+	// the buckets are subdivided into cache-friendly portions of size portion_sz * NB.
+	// once a particular portion is filled for a bucket, increment that portion's offset by
+	// portion_sz * NB to begin filling the next portion.
 	int i;
+	uint32_t *current_bucket[NB];
+	uint32_t portion_cnt[NB];
+	uint32 shift, mask;
 	
-	for (i = 0; i < num_buckets; i++) {bucket_counts[i] = 0;};
-	for (i = 0; i < num_buckets; i++) {sm_bcnt[i] = 0;};
+	if ((32 + SH) > key_bits)
+	{
+		shift = key_bits - SH;
+		mask = (1 << shift)  - 1;
+	}
+	else
+	{
+		shift = 32;
+		mask = 0xffffffff;
+	}
+	
+	for (i = 0; i < NB; i++) 
+	{
+		current_bucket[i] = buckets + i * portion_sz;
+		bucket_counts[i] = 0;
+		portion_cnt[i] = 0;
+	}
 	
 	for (i = 0; i < sz; i++) {
-		uint32 key = (uint32)(data[i] >> (key_bits - SH));
-		//if(key>=num_buckets) {printf("error key too big: %u (%lu)\n", key, data[i]); fflush(stdout);}
-		sm_buckets[(key * sm_bucket_sz) + sm_bcnt[key]] = data[i];
-		sm_bcnt[key]++;
-		
-		if (sm_bcnt[key] == sm_bucket_sz)
+		uint32 key = (uint32)((data[i] >> shift) & NB1);
+		uint32_t *bptr = current_bucket[key];
+		bptr[portion_cnt[key]] = data[i] & mask;
+		portion_cnt[key]++;
+
+		if (portion_cnt[key] == portion_sz)
 		{
-			memcpy(buckets + key * bucket_size + bucket_counts[key], sm_buckets + key * sm_bucket_sz, sm_bucket_sz * sizeof(uint64_t));
-			bucket_counts[key] += sm_bucket_sz;
-			sm_bcnt[key] = 0;
+			current_bucket[key] += portion_sz * NB;
+			bucket_counts[key] += portion_sz;
+			portion_cnt[key] = 0;
 		}
 	}
 	
-	for (i = 0; i < num_buckets; i++)
+	for (i = 0; i < NB; i++)
 	{
-		memcpy(buckets + i * bucket_size + bucket_counts[i], sm_buckets + i * sm_bucket_sz, sm_bcnt[i] * sizeof(uint64_t));
-		bucket_counts[i] += sm_bcnt[i];
+		bucket_counts[i] += portion_cnt[i];
 	}
 		
 	return;
 }
 
-int main3(int argc, char ** argv)
+int mainpar(int argc, char ** argv)
 {
 	uint32 i, j, n;
 	uint32 num_sort;
@@ -4696,7 +6604,7 @@ done:
 	return 0;
 }
 
-int main2(int argc, char ** argv)
+int main64(int argc, char ** argv)
 {
 	uint32 i, j, n;
 	uint32 num_sort;
@@ -4833,7 +6741,7 @@ done:
 	return 0;
 }
 
-int main(int argc, char ** argv)
+int main32(int argc, char ** argv)
 {
 	uint32 i, j, n;
 	uint32 num_sort;
@@ -4846,7 +6754,6 @@ int main(int argc, char ** argv)
 	uint32 seed2 = 0x22222;
 	
 	swap8bit_idx = _mm512_set1_epi64(0xefcdba8967452301);
-	swap16bit_idx = _mm512_set1_epi64(0xdcfe98ba54761032);
 	
 	if ((argc < 5) || (argc > 6))
 	{
@@ -4979,8 +6886,7 @@ done:
 	return 0;
 }
 
-
-int main4(int argc, char ** argv)
+int main16(int argc, char ** argv)
 {
 	uint32 i, j, n;
 	uint32 num_sort;
@@ -4991,6 +6897,8 @@ int main4(int argc, char ** argv)
 	double tseconds = 0.0;
 	uint32 seed1 = 0x11111;
 	uint32 seed2 = 0x22222;
+	
+	swap8bit_idx = _mm512_set1_epi64(0xefcdba8967452301);
 	
 	if ((argc < 5) || (argc > 6))
 	{
@@ -5011,91 +6919,298 @@ int main4(int argc, char ** argv)
 		printf("seed: %u\n", s);
 	}
 
-	uint64_t *loc_keys = (uint64 *)aligned_malloc(num_sort * sizeof(uint64), 64);
-	uint32_t bucket_size = next_power_2(num_sort / num_buckets);
-	uint64_t *buckets = (uint64_t*)aligned_malloc(2 * num_buckets * bucket_size * sizeof(uint64_t), 64);
-	uint32_t bucket_counts[num_buckets];
-	uint64_t *merge_bkt = (uint64_t*)aligned_malloc(bucket_size * sizeof(uint64_t), 64);
-	printf("num buckets: %u, bucket size = %u\n", num_buckets, bucket_size);
+	uint32 bitonic_sort_size = (1 << sort_sz);
+
+	uint32 num_lists = num_sort / bitonic_sort_size;
 	
-	uint32_t total_collisions = 0;
+	if (num_lists * bitonic_sort_size < num_sort)
+	{
+		num_lists++;
+		num_sort = num_lists * bitonic_sort_size;
+	}
+
+	uint16_t *loc_keys = (uint16 *)aligned_malloc(num_sort * sizeof(uint16), 64);
+	
 	for (n = 0; n < num_reps; n++) {
 		
 		for (i = 0; i < num_sort; i++) {
-			uint64 key = (uint64)get_rand(&seed1, &seed2) << 32 |
-					get_rand(&seed1, &seed2);
-					
-			loc_keys[i] = key >> (64 - key_bits);
+			uint32 key = get_rand(&seed1, &seed2) & 0xffff;
+			loc_keys[i] = key >> (16 - key_bits);
 		}
 		
 		seconds = get_cpu_time();
 		
 		uint32 num_collisions = 0;
 		
-		// sort into N buckets
-		bucket_sort2(buckets, bucket_size, bucket_counts, loc_keys, key_bits, num_sort);
-		//printf("finished bucket sort\n"); fflush(stdout);
+		for (j = 0; j < num_sort; j += bitonic_sort_size) {
+			bitonic_sort16(loc_keys + j, bitonic_sort_size, 0);
+		}
 		
-		// then sort each bucket and count collisions in each.
-		// matching keys will always be in the same bucket.
-		for (j = 0; j < num_buckets; j++) {
-			int k;
-			for (k = 0; k < bucket_size / portion_sz; k++) {
-				memcpy(&merge_bkt[k * portion_sz], buckets + j * portion_sz + k * portion_sz * num_buckets, portion_sz * sizeof(uint64_t)); 
-				bitonic_sort(&merge_bkt[k * portion_sz], portion_sz, k & 1);
-			}
-
-			if (bucket_counts[j] < bucket_size)
-				memset(&merge_bkt[bucket_counts[j]], 0xff, (bucket_size - bucket_counts[j]) * sizeof(uint64));
-			//else if (bucket_counts[j] > bucket_size)
-			//	printf("bucket %u count greater than bucket size %u\n", bucket_counts[j], bucket_size);
-			
-			//bitonic_sort(merge_bkt, bucket_size, k & 1);
-			
-			//printf("commencing merge on bucket data %u\n", j); fflush(stdout);
-			uint32_t merge_sz = 2 * portion_sz;
-			while (merge_sz < bucket_size)
-			{
-				for (k = 0; k < bucket_size / merge_sz; k++) {
-					// up/down merges of the previous up/down sorts, output is up/down sorted
-					bitonic_merge(&merge_bkt[k * merge_sz], merge_sz, k & 1);
+		tseconds += (get_cpu_time() - seconds);
+		
+		for (i = 0; i < num_lists; i++) {
+			for (j = 1; j < bitonic_sort_size; j++) {
+				if (loc_keys[i * bitonic_sort_size + j] < loc_keys[i * bitonic_sort_size + j-1]) {
+					printf("sort error at position %d in list\n", j);
+					
+					int k;
+					for (k = 0; k < bitonic_sort_size; k++)
+					{
+						if (k % 16 == 0) printf("\n");
+						printf("%08u ", loc_keys[i * bitonic_sort_size + k]);
+					}
+					printf("\n");
+				
+					goto done;
 				}
-				merge_sz *= 2;
-			}
-		
-			// final merge in the specified direction
-			bitonic_merge(merge_bkt, bucket_size, 0);
-			
-			//printf("\nbucket %u\n", j);
-			//for (k = 0; k < bucket_size; k++) { //bucket_counts[j]; k++) {
-			//	if ((k & 7) == 0)
-			//		printf("\n");
-			//	printf("%016lx ", merge_bkt[k]);
-			//}
-
-			for (k = 1; k < bucket_counts[j]; k++) {
-				if ((merge_bkt[k] == merge_bkt[k - 1]) && (merge_bkt[k] > 0)) {
-					//printf("collision @ index %u\n", k);
+				
+				if (loc_keys[i * bitonic_sort_size + j] == loc_keys[i * bitonic_sort_size + j-1]) {
 					num_collisions++;
 				}
 			}
 		}
-
+		
+		printf("found %u total collisions in %u lists of %u elements\n", 
+			num_collisions, num_lists, bitonic_sort_size);
+	}
+	
+	printf("sort %u x %u-bit keys in average of %lf seconds\n", 
+		num_sort, key_bits, tseconds / (double)num_reps);
+	
+	seed1 = 0x11111;
+	seed2 = 0x22222;
+	tseconds = 0.0;
+	for (n = 0; n < num_reps; n++) {
+		
+		for (i = 0; i < num_sort; i++) {
+			uint32 key = get_rand(&seed1, &seed2) & 0xffff;
+			loc_keys[i] = key >> (16 - key_bits);
+		}
+		
+		seconds = get_cpu_time();
+		
+		uint32 num_collisions = 0;
+		
+		for (j = 0; j < num_sort; j += bitonic_sort_size) {
+			qsort(loc_keys + j, bitonic_sort_size, sizeof(uint16), &qcomp_uint16);
+		}
+		
 		tseconds += (get_cpu_time() - seconds);
-		total_collisions += num_collisions;
+		
+		for (i = 0; i < num_lists; i++) {
+			for (j = 1; j < bitonic_sort_size; j++) {
+				if (loc_keys[i * bitonic_sort_size + j] < loc_keys[i * bitonic_sort_size + j-1]) {
+					printf("sort error at position %d in list\n", j);
+					
+					int k;
+					for (k = 0; k < bitonic_sort_size; k++)
+					{
+						if (k % 16 == 0) printf("\n");
+						printf("%08u ", loc_keys[i * bitonic_sort_size + k]);
+					}
+					printf("\n");
+	
+					goto done;
+				}
+				
+				if (loc_keys[i * bitonic_sort_size + j] == loc_keys[i * bitonic_sort_size + j-1]) {
+					num_collisions++;
+				}
+			}
+		}
+		
+		printf("found %u total collisions in %u lists of %u elements\n", 
+			num_collisions, num_lists, bitonic_sort_size);
+	}
+	
+done:
+	printf("sort %u x %u-bit keys in average of %lf seconds\n", 
+		num_sort, key_bits, tseconds / (double)num_reps);
+	
+	aligned_free(loc_keys);
+	return 0;
+}
 
-		//printf("found %u total collisions in %u elements\n", 
-		//	num_collisions, num_sort); fflush(stdout);
+//_collide32
+int main(int argc, char ** argv)
+{
+	uint32 i, j, n;
+	uint32 num_sort;
+	uint32 num_reps;
+	uint32 key_bits;
+	uint32 sort_sz;
+	double seconds;
+	double tseconds = 0.0;
+	uint32 seed1 = 0x11111;
+	uint32 seed2 = 0x22222;
+	
+	if ((argc < 4) || (argc > 5))
+	{
+		printf("usage: vecsort key_bits num_sort num_reps <seed>\n");
+		exit(0);
+	}
+	
+	key_bits = strtoul(argv[1], NULL, 10);
+	num_sort = strtoul(argv[2], NULL, 10);
+	num_reps = strtoul(argv[3], NULL, 10);
+	
+	if (argc == 5)
+	{
+		uint32 s = strtoul(argv[4], NULL, 10);
+		seed1 = s & 0xffff;
+		seed2 = s >> 16;
+		printf("seed: %u\n", s);
+	}
+
+	uint64_t *loc_keys = (uint64 *)aligned_malloc(num_sort * sizeof(uint64), 64);
+	uint32_t bucket_size = next_power_2(num_sort / NB);
+	uint32_t *buckets = (uint32_t*)aligned_malloc(2 * NB * bucket_size * sizeof(uint32_t), 64);
+	uint32_t bucket_counts[NB];
+	uint32_t *merge_bkt = (uint32_t*)aligned_malloc(2 * bucket_size * sizeof(uint32_t), 64);
+	uint32_t *survivors = (uint32_t*)aligned_malloc(64 * sizeof(uint32_t), 64);
+	uint64_t *possible_match = (uint64_t*)aligned_malloc(64 * sizeof(uint64_t), 64);
+	
+	printf("num buckets: %u, bucket size = %u\n", NB, bucket_size);
+	
+	uint32_t total_collisions = 0;
+	uint32_t total_survivors = 0;
+	uint32_t num_spilled = 0;
+	for (n = 0; n < num_reps; n++) {
+		int k;
+		
+		for (i = 0; i < num_sort; i++) {
+			uint64 key = (uint64)get_rand(&seed1, &seed2) << 32 |
+					get_rand(&seed1, &seed2);
+					
+			loc_keys[i] = key >> (64 - key_bits);
+		}
+		
+		seconds = get_cpu_time(); //my_rdtsc(); //
+		
+		uint32 num_collisions = 0;
+		uint32 num_survivors = 0;
+		
+		// sort into buckets
+		for (j = 0; j < 2 * NB * bucket_size; j++) { buckets[j] = 0xffffffff; }
+		bucket_sort32(buckets, bucket_size, bucket_counts, loc_keys, key_bits, num_sort);
+		
+		// then sort each bucket and count collisions in each.
+		// matching keys will always be in the same bucket.
+		for (j = 0; j < NB; j++) {
+			// first need to gather each portion of a bucket
+			int nc;
+			for (k = 0, nc = 0; nc < bucket_counts[j]; k++) {
+				memcpy(&merge_bkt[k * portion_sz], buckets + j * portion_sz + k * portion_sz * NB, portion_sz * sizeof(uint32_t)); 
+				nc += portion_sz;
+			}
+
+			// now sort the bucket
+			if (bucket_counts[j] <= bucket_size)
+			{
+				for (k = bucket_counts[j]; k < bucket_size; k++) { merge_bkt[k] = 0xffffffff; }
+				bitonic_sort32(merge_bkt, bucket_size, 0);
+			}
+			else if (bucket_counts[j] <= (2 * bucket_size))
+			{
+				for (k = bucket_counts[j]; k < 2 * bucket_size; k++) { merge_bkt[k] = 0xffffffff; }
+				bitonic_sort32(merge_bkt, 2 * bucket_size, 0);
+			}
+			else
+			{
+				num_spilled += (bucket_counts[j] - bucket_size);
+				bucket_counts[j] = 2 * bucket_size;
+				bitonic_sort32(merge_bkt, 2 * bucket_size, 0);
+			}
+
+			for (k = 1; k < bucket_counts[j] - 16; k+=16) {
+				__m512i e0 = _mm512_load_epi32(&merge_bkt[k-1]);
+				__m512i e1 = _mm512_loadu_epi32(&merge_bkt[k]);
+				uint32 msk = _mm512_cmpeq_epu32_mask(e0, e1);
+
+				while (msk > 0)
+				{
+					uint32 idx = my_ctz32(msk);
+					survivors[num_survivors++] = merge_bkt[k+idx];
+					if (num_survivors > 64) printf("survivors overflow\n");
+					msk = _blsr_u64(msk);
+				}
+			}
+			for ( ; k < bucket_counts[j]; k++)
+			{
+				if (merge_bkt[k] == merge_bkt[k - 1]) {
+					// this one's lower bits match, add it to survivor list 
+					// for further checking.
+					survivors[num_survivors++] = merge_bkt[k];
+				}
+			}
+		}
+		
+		//if (num_survivors > 64) printf("survivors overflow\n");
+		total_survivors += num_survivors;
+
+		uint32 shift, mask;
+	
+		if ((32 + SH) > key_bits)
+		{
+			shift = key_bits - SH;
+			mask = (1 << shift)  - 1;
+		}
+		else
+		{
+			shift = 32;
+			mask = 0xffffffff;
+		}
+
+		__m512i vmask = _mm512_set1_epi64(mask);
+		k = 0;
+		for (j = 0; j < num_survivors; j++) {
+			__m512i vsurvivor = _mm512_set1_epi64(survivors[j]);
+
+			for (i = 0; i < num_sort - 8; i += 8) {
+				__m512i vkeys = _mm512_and_epi64(vmask, _mm512_load_epi64(loc_keys + i));
+				uint32 msk = _mm512_cmpeq_epu64_mask(vkeys, vsurvivor);
+
+				while (msk > 0)
+				{
+					uint32 idx = my_ctz32(msk);
+					possible_match[k++] = loc_keys[i + idx];
+					msk = _blsr_u64(msk);
+				}
+			}
+
+			for ( ; i < num_sort; i++) {
+				uint64 key = loc_keys[i];
+				if ((key & mask) == survivors[j])
+				{
+					possible_match[k++] = key;
+					if (k > 64) printf("matches overflow\n");
+				}
+			}
+		}
+		
+		qsort(possible_match, k, sizeof(uint64), &qcomp_uint64);
+		
+		for (j = 1; j < k; j++) {
+			if (possible_match[j] == possible_match[j - 1]) {
+				num_collisions++;
+			}
+		}
+
+		tseconds += (get_cpu_time() - seconds); //(my_rdtsc() - seconds); //
+		total_collisions += num_collisions;
 	}
 	
 	aligned_free(buckets);
 	aligned_free(merge_bkt);
-	
-	printf("sort %u x %u-bit keys with %u total collisions in average of %lf seconds\n", 
-		num_sort, key_bits, total_collisions, tseconds / (double)num_reps);
+
+	printf("sort %u x %u-bit keys (%u reps) with %u total survivors and %u total matches (%u spilled) in %lf seconds (avg of %lf sec each)\n", 
+		num_sort, key_bits, num_reps, total_survivors, total_collisions, num_spilled, tseconds, tseconds / (double)num_reps);
 	
 	tseconds = 0.0;
 	total_collisions = 0;
+	seed1 = 0x11111;
+	seed2 = 0x22222;
+	
 	for (n = 0; n < num_reps; n++) {
 		
 		for (i = 0; i < num_sort; i++) {
@@ -5105,7 +7220,7 @@ int main4(int argc, char ** argv)
 			loc_keys[i] = key >> (64 - key_bits);
 		}
 		
-		seconds = get_cpu_time();
+		seconds = my_rdtsc(); //get_cpu_time();
 		
 		uint32 num_collisions = 0;
 		
@@ -5117,7 +7232,7 @@ int main4(int argc, char ** argv)
 			}
 		}
 		
-		tseconds += (get_cpu_time() - seconds);
+		tseconds += (my_rdtsc() - seconds); //(get_cpu_time() - seconds);
 
 		//printf("found %u total collisions in %u elements\n", 
 		//	num_collisions, num_sort);
@@ -5125,12 +7240,247 @@ int main4(int argc, char ** argv)
 	}
 	
 done:
-	printf("sort %u x %u-bit keys with %u total collisions in average of %lf seconds\n", 
-		num_sort, key_bits, total_collisions, tseconds / (double)num_reps);
+	printf("matches should be %u (%u x %u-bit keys x %u reps, %lf ticks)\n", 
+		total_collisions, num_sort, key_bits, num_reps, tseconds / (double)num_reps);
 	
 	aligned_free(loc_keys);
 	return 0;
 }
+
+//
+// only effective with very small problem sizes because of the
+// birthday paradox with 16-bit buckets: too large a chance of random collisions
+// in a bucket leads to too many survivors and large slowdown in final phase.
+int main_collide16(int argc, char ** argv)
+{
+	uint32 i, j, n;
+	uint32 num_sort;
+	uint32 num_reps;
+	uint32 key_bits;
+	uint32 sort_sz;
+	double seconds;
+	double tseconds = 0.0;
+	uint32 seed1 = 0x11111;
+	uint32 seed2 = 0x22222;
+	
+	if ((argc < 4) || (argc > 5))
+	{
+		printf("usage: vecsort key_bits num_sort num_reps <seed>\n");
+		exit(0);
+	}
+	
+	key_bits = strtoul(argv[1], NULL, 10);
+	num_sort = strtoul(argv[2], NULL, 10);
+	num_reps = strtoul(argv[3], NULL, 10);
+	
+	if (argc == 5)
+	{
+		uint32 s = strtoul(argv[4], NULL, 10);
+		seed1 = s & 0xffff;
+		seed2 = s >> 16;
+		printf("seed: %u\n", s);
+	}
+
+	uint64_t *loc_keys = (uint64 *)aligned_malloc(num_sort * sizeof(uint64), 64);
+	uint32_t bucket_size = next_power_2(num_sort / NB);
+	uint16_t *buckets = (uint16_t*)aligned_malloc(2 * NB * bucket_size * sizeof(uint16_t), 64);
+	uint32_t bucket_counts[NB];
+	uint16_t *merge_bkt = (uint16_t*)aligned_malloc(2 * bucket_size * sizeof(uint16_t), 64);
+	uint32_t *survivors = (uint32_t*)aligned_malloc(256 * sizeof(uint32_t), 64);
+	uint64_t *possible_match = (uint64_t*)aligned_malloc(64 * sizeof(uint64_t), 64);
+	
+	printf("num buckets: %u, bucket size = %u\n", NB, bucket_size);
+	
+	uint32_t total_collisions = 0;
+	uint32_t total_survivors = 0;
+	uint32_t num_spilled = 0;
+	for (n = 0; n < num_reps; n++) {
+		int k;
+		
+		for (i = 0; i < num_sort; i++) {
+			uint64 key = (uint64)get_rand(&seed1, &seed2) << 32 |
+					get_rand(&seed1, &seed2);
+					
+			loc_keys[i] = key >> (64 - key_bits);
+		}
+		
+		seconds = my_rdtsc(); //get_cpu_time();
+		
+		uint32 num_collisions = 0;
+		uint32 num_survivors = 0;
+		
+		// sort into buckets
+		for (j = 0; j < 2 * NB * bucket_size; j++) { buckets[j] = 0xffff; }
+		bucket_sort16(buckets, bucket_size, bucket_counts, loc_keys, key_bits, num_sort);
+		
+		
+		// then sort each bucket and count collisions in each.
+		// matching keys will always be in the same bucket.
+		for (j = 0; j < NB; j++) {
+			// first need to gather each portion of a bucket
+			int nc;
+			for (k = 0, nc = 0; nc < bucket_counts[j]; k++) {
+				memcpy(&merge_bkt[k * portion_sz], buckets + j * portion_sz + k * portion_sz * NB, portion_sz * sizeof(uint16_t)); 
+				nc += portion_sz;
+			}
+
+			//printf("bucket %d\n", j);
+			//for (k = 0; k < bucket_counts[j]; k++)
+			//{
+			//	if ((k & 31) == 0) printf("\n");
+			//	printf("%04x ", merge_bkt[k]);
+			//}
+			//printf("\n");
+			
+			// now sort the bucket
+			if (bucket_counts[j] <= bucket_size)
+			{
+				for (k = bucket_counts[j]; k < bucket_size; k++) { merge_bkt[k] = 0xffff; }
+				bitonic_sort16(merge_bkt, bucket_size, 0);
+			}
+			else if (bucket_counts[j] <= (2 * bucket_size))
+			{
+				for (k = bucket_counts[j]; k < 2 * bucket_size; k++) { merge_bkt[k] = 0xffff; }
+				bitonic_sort16(merge_bkt, 2 * bucket_size, 0);
+			}
+			else
+			{
+				num_spilled += (bucket_counts[j] - bucket_size);
+				bucket_counts[j] = 2 * bucket_size;
+				bitonic_sort16(merge_bkt, 2 * bucket_size, 0);
+			}
+			
+			//printf("sorted bucket %d\n", j);
+			//for (k = 0; k < bucket_counts[j]; k++)
+			//{
+			//	if ((k & 31) == 0) printf("\n");
+			//	printf("%04x ", merge_bkt[k]);
+			//}
+			//printf("\n");
+
+			// for (k = 1; k < bucket_counts[j] - 32; k+=32) {
+			// 	__m512i e0 = _mm512_loadu_epi16(&merge_bkt[k-1]);
+			// 	__m512i e1 = _mm512_loadu_epi16(&merge_bkt[k]);
+			// 	uint32 msk = _mm512_cmpeq_epu16_mask(e0, e1);
+			// 	
+			// 	if (msk == 0xffffffff) { printf("should not all match\n"); exit(0); }
+			// 
+			// 	while (msk > 0)
+			// 	{
+			// 		uint32 idx = my_ctz32(msk);
+			// 		survivors[num_survivors++] = (j << 16) | (uint32)merge_bkt[k+idx];
+			// 		if (num_survivors > 64) printf("survivors overflow\n");
+			// 		msk = _blsr_u64(msk);
+			// 	}
+			// }
+			uint16_t last_match = 0xffff;
+			for (k = 1; k < bucket_counts[j]; k++)
+			{
+				if ((merge_bkt[k] == merge_bkt[k - 1]) && (merge_bkt[k] != last_match)) {
+					// this one's lower bits match, add it to survivor list 
+					// for further checking.
+					survivors[num_survivors++] = (j << 16) | (uint32)merge_bkt[k];
+					last_match = merge_bkt[k];
+					if (num_survivors > 64) printf("survivors overflow\n");
+				}
+			}
+			
+			//printf("num survivors now %u\n", num_survivors);
+		}
+		
+		//if (num_survivors > 64) printf("survivors overflow\n");
+		total_survivors += num_survivors;
+
+		if (1) {
+		__m512i vmask = _mm512_set1_epi64(0x7fffff);
+		k = 0;
+		for (j = 0; j < num_survivors; j++) {
+			__m512i vsurvivor = _mm512_set1_epi64(survivors[j]);
+
+			for (i = 0; i < num_sort - 8; i += 8) {
+				__m512i vkeys = _mm512_and_epi64(vmask, _mm512_load_epi64(loc_keys + i));
+				uint32 msk = _mm512_cmpeq_epu64_mask(vkeys, vsurvivor);
+
+				while (msk > 0)
+				{
+					uint32 idx = my_ctz32(msk);
+					possible_match[k++] = loc_keys[i + idx];
+					msk = _blsr_u64(msk);
+				}
+			}
+
+			for ( ; i < num_sort; i++) {
+				uint64 key = loc_keys[i];
+				if ((key & 0x7fffff) == survivors[j])
+				{
+					possible_match[k++] = key;
+					if (k > 64) printf("matches overflow\n");
+				}
+			}
+		}
+		
+		qsort(possible_match, k, sizeof(uint64), &qcomp_uint64);
+		
+		for (j = 1; j < k; j++) {
+			if (possible_match[j] == possible_match[j - 1]) {
+				printf("rep %d, match %d: %016lx,%016lx\n", n, num_collisions, possible_match[j - 1], possible_match[j]);
+				num_collisions++;
+			}
+		}
+		}
+
+		tseconds += (my_rdtsc() - seconds); //(get_cpu_time() - seconds);
+		total_collisions += num_collisions;
+	}
+	
+	aligned_free(buckets);
+	aligned_free(merge_bkt);
+
+	printf("sort %u x %u-bit keys (%u reps) with %u total survivors and %u total matches (%u spilled) in average of %lf ticks\n", 
+		num_sort, key_bits, num_reps, total_survivors, total_collisions, num_spilled, tseconds / (double)num_reps);
+	
+	tseconds = 0.0;
+	total_collisions = 0;
+	seed1 = 0x11111;
+	seed2 = 0x22222;
+	
+	for (n = 0; n < num_reps; n++) {
+		
+		for (i = 0; i < num_sort; i++) {
+			uint64 key = (uint64)get_rand(&seed1, &seed2) << 32 |
+					get_rand(&seed1, &seed2);
+					
+			loc_keys[i] = key >> (64 - key_bits);
+		}
+		
+		seconds = my_rdtsc(); //get_cpu_time();
+		
+		uint32 num_collisions = 0;
+		
+		qsort(loc_keys, num_sort, sizeof(uint64), &qcomp_uint64);
+		
+		for (j = 1; j < num_sort; j++) {
+			if (loc_keys[j] == loc_keys[j-1]) {
+				printf("rep %d, match %d: %016lx,%016lx\n", n, num_collisions, loc_keys[j - 1], loc_keys[j]);
+				num_collisions++;
+			}
+		}
+		
+		tseconds += (my_rdtsc() - seconds); //(get_cpu_time() - seconds);
+
+		//printf("found %u total collisions in %u elements\n", 
+		//	num_collisions, num_sort);
+		total_collisions += num_collisions;
+	}
+	
+done:
+	printf("matches should be %u (%u x %u-bit keys x %u reps, %lf ticks)\n", 
+		total_collisions, num_sort, key_bits, num_reps, tseconds / (double)num_reps);
+	
+	aligned_free(loc_keys);
+	return 0;
+}
+
 
 
 
